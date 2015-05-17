@@ -1,5 +1,5 @@
 language: cpp
-compiler: clang
+compiler: gcc
 
 before_install:
   # g++4.8
@@ -11,6 +11,8 @@ install:
   - sudo apt-get install -qq g++-4.8
   # lua, needed for style checking and possibly later on for bindings generation
   - sudo apt-get install -qq lua5.1
+  - export CXX="g++-4.8"
+  - export CC="gcc-4.8"
 
 # Build MCServer
 script: ./CIbuild.sh
