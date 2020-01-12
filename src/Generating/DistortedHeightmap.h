@@ -27,7 +27,7 @@ class cDistortedHeightmap :
 {
 public:
 	cDistortedHeightmap(int a_Seed, cBiomeGenPtr a_BiomeGen);
-	
+
 protected:
 	typedef cChunkDef::BiomeMap BiomeNeighbors[3][3];
 
@@ -49,8 +49,7 @@ protected:
 	NOISE_DATATYPE m_FrequencyY;
 	NOISE_DATATYPE m_FrequencyZ;
 
-	int m_CurChunkX;
-	int m_CurChunkZ;
+	cChunkCoords m_CurChunkCoords;
 	NOISE_DATATYPE m_DistortedHeightmap[17 * 257 * 17];
 
 	/** The bime generator to query for biomes. */
@@ -61,10 +60,10 @@ protected:
 
 	/** Cache for m_UnderlyingHeiGen. */
 	cHeiGenCache m_HeightGen;
-	
+
 	/** Heightmap for the current chunk, before distortion (from m_HeightGen). Used for optimization. */
 	cChunkDef::HeightMap m_CurChunkHeights;
-	
+
 	// Per-biome terrain generator parameters:
 	struct sGenParam
 	{
@@ -72,35 +71,35 @@ protected:
 		NOISE_DATATYPE m_DistortAmpZ;
 	} ;
 	static const sGenParam m_GenParam[256];
-	
+
 	// Distortion amplitudes for each direction, before linear upscaling
 	NOISE_DATATYPE m_DistortAmpX[DIM_X * DIM_Z];
 	NOISE_DATATYPE m_DistortAmpZ[DIM_X * DIM_Z];
-	
+
 	/** True if Initialize() has been called. Used to initialize-once even with multiple init entrypoints (HeiGen / CompoGen). */
 	bool m_IsInitialized;
-	
+
 
 	/** Unless the LastChunk coords are equal to coords given, prepares the internal state (noise arrays, heightmap). */
-	void PrepareState(int a_ChunkX, int a_ChunkZ);
-	
+	void PrepareState(cChunkCoords a_ChunkCoords);
+
 	/** Generates the m_DistortedHeightmap array for the current chunk. */
 	void GenerateHeightArray(void);
-	
+
 	/** Calculates the heightmap value (before distortion) at the specified (floating-point) coords. */
 	int GetHeightmapAt(NOISE_DATATYPE a_X, NOISE_DATATYPE a_Z);
-	
+
 	/** Updates m_DistortAmpX/Z[] based on m_CurChunkX and m_CurChunkZ. */
 	void UpdateDistortAmps(void);
-	
+
 	/** Calculates the X and Z distortion amplitudes based on the neighbors' biomes. */
 	void GetDistortAmpsAt(BiomeNeighbors & a_Neighbors, int a_RelX, int a_RelZ, NOISE_DATATYPE & a_DistortAmpX, NOISE_DATATYPE & a_DistortAmpZ);
-	
+
 	/** Reads the settings from the ini file. Skips reading if already initialized. */
 	void Initialize(cIniFile & a_IniFile);
-	
-	
+
+
 	// cTerrainShapeGen overrides:
-	virtual void GenShape(int a_ChunkX, int a_ChunkZ, cChunkDesc::Shape & a_Shape) override;
+	virtual void GenShape(cChunkCoords a_ChunkCoords, cChunkDesc::Shape & a_Shape) override;
 	virtual void InitializeShapeGen(cIniFile & a_IniFile) override;
 } ;

@@ -2,7 +2,6 @@
 #pragma once
 
 #include "BlockHandler.h"
-#include "../Mobs/Monster.h"
 
 
 
@@ -18,7 +17,7 @@ public:
 	}
 
 	virtual bool GetPlacementBlockTypeMeta(
-		cChunkInterface & a_ChunkInterface, cPlayer * a_Player,
+		cChunkInterface & a_ChunkInterface, cPlayer & a_Player,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
 		int a_CursorX, int a_CursorY, int a_CursorZ,
 		BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta
@@ -34,15 +33,22 @@ public:
 	}
 
 
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
+
+
+
+	virtual cItems ConvertToPickups(NIBBLETYPE a_BlockMeta, cBlockEntity * a_BlockEntity, const cEntity * a_Digger, const cItem * a_Tool) override
 	{
 		// No pickups
+		return {};
 	}
+
+
+
+
 
 	virtual void OnUpdate(cChunkInterface & cChunkInterface, cWorldInterface & a_WorldInterface, cBlockPluginInterface & a_PluginInterface, cChunk & a_Chunk, int a_RelX, int a_RelY, int a_RelZ) override
 	{
-		cFastRandom Random;
-		if (Random.NextInt(2000) != 0)
+		if (GetRandomProvider().RandBool(0.9995))
 		{
 			return;
 		}
@@ -50,7 +56,7 @@ public:
 		int PosX = a_Chunk.GetPosX() * cChunkDef::Width + a_RelX;
 		int PosZ = a_Chunk.GetPosZ() * cChunkDef::Width + a_RelZ;
 
-		a_WorldInterface.SpawnMob(PosX, a_RelY, PosZ, mtZombiePigman);
+		a_WorldInterface.SpawnMob(PosX, a_RelY, PosZ, mtZombiePigman, false);
 	}
 
 	virtual bool CanBeAt(cChunkInterface & a_ChunkInterface, int a_RelX, int a_RelY, int a_RelZ, const cChunk & a_Chunk) override
@@ -64,21 +70,20 @@ public:
 		{
 			case 0x1:
 			{
-				static const struct
+				static const std::array<Vector3i, 4> PortalCheck
 				{
-					int x, y, z;
-				} PortalCheck[] =
-				{
-					{ 0, 1,  0},
-					{ 0, -1,  0},
-					{ 1, 0,  0},
-					{-1, 0,  0},
-				} ;
+					{
+						{ 0, 1, 0 },
+						{ 0, -1, 0 },
+						{ 1, 0, 0 },
+						{ -1, 0, 0 },
+					}
+				};
 
-				for (size_t i = 0; i < ARRAYCOUNT(PortalCheck); i++)
+				for (const auto & Direction : PortalCheck)
 				{
 					BLOCKTYPE Block;
-					a_Chunk.UnboundedRelGetBlockType(a_RelX + PortalCheck[i].x, a_RelY + PortalCheck[i].y, a_RelZ + PortalCheck[i].z, Block);
+					a_Chunk.UnboundedRelGetBlockType(a_RelX + Direction.x, a_RelY + Direction.y, a_RelZ + Direction.z, Block);
 
 					if ((Block != E_BLOCK_NETHER_PORTAL) && (Block != E_BLOCK_OBSIDIAN))
 					{
@@ -89,21 +94,20 @@ public:
 			}
 			case 0x2:
 			{
-				static const struct
+				static const std::array<Vector3i, 4> PortalCheck
 				{
-					int x, y, z;
-				} PortalCheck[] =
-				{
-					{ 0, 1,  0},
-					{ 0, -1,  0},
-					{ 0, 0, -1},
-					{ 0, 0,  1},
-				} ;
+					{
+						{ 0, 1, 0 },
+						{ 0, -1, 0 },
+						{ 0, 0, -1 },
+						{ 0, 0, 1 },
+					}
+				};
 
-				for (size_t i = 0; i < ARRAYCOUNT(PortalCheck); i++)
+				for (const auto & Direction : PortalCheck)
 				{
 					BLOCKTYPE Block;
-					a_Chunk.UnboundedRelGetBlockType(a_RelX + PortalCheck[i].x, a_RelY + PortalCheck[i].y, a_RelZ + PortalCheck[i].z, Block);
+					a_Chunk.UnboundedRelGetBlockType(a_RelX + Direction.x, a_RelY + Direction.y, a_RelZ + Direction.z, Block);
 
 					if ((Block != E_BLOCK_NETHER_PORTAL) && (Block != E_BLOCK_OBSIDIAN))
 					{
@@ -114,6 +118,12 @@ public:
 			}
 		}
 		return true;
+	}
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 24;
 	}
 } ;
 

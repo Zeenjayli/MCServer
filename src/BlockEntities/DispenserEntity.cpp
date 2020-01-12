@@ -3,17 +3,20 @@
 
 #include "DispenserEntity.h"
 #include "../Simulator/FluidSimulator.h"
+#include "../Entities/Boat.h"
 #include "../Chunk.h"
 
+#include "../Defines.h"
 #include "../World.h"
 #include "../Entities/ProjectileEntity.h"
 
 
 
 
-cDispenserEntity::cDispenserEntity(int a_BlockX, int a_BlockY, int a_BlockZ, cWorld * a_World) :
-	super(E_BLOCK_DISPENSER, a_BlockX, a_BlockY, a_BlockZ, a_World)
+cDispenserEntity::cDispenserEntity(BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, Vector3i a_Pos, cWorld * a_World):
+	super(a_BlockType, a_BlockMeta, a_Pos, a_World)
 {
+	ASSERT(a_BlockType == E_BLOCK_DISPENSER);
 }
 
 
@@ -22,36 +25,42 @@ cDispenserEntity::cDispenserEntity(int a_BlockX, int a_BlockY, int a_BlockZ, cWo
 
 void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 {
-	int DispX = m_RelX;
-	int DispY = m_PosY;
-	int DispZ = m_RelZ;
-	NIBBLETYPE Meta = a_Chunk.GetMeta(m_RelX, m_PosY, m_RelZ);
-	AddDropSpenserDir(DispX, DispY, DispZ, Meta);
-	cChunk * DispChunk = a_Chunk.GetRelNeighborChunkAdjustCoords(DispX, DispZ);
-	if (DispChunk == nullptr)
+	Vector3i dispRelCoord(GetRelPos());
+	auto meta = a_Chunk.GetMeta(dispRelCoord);
+	AddDropSpenserDir(dispRelCoord, meta);
+	auto dispChunk = a_Chunk.GetRelNeighborChunkAdjustCoords(dispRelCoord);
+	if (dispChunk == nullptr)
 	{
 		// Would dispense into / interact with a non-loaded chunk, ignore the tick
 		return;
 	}
 
-	BLOCKTYPE DispBlock = DispChunk->GetBlock(DispX, DispY, DispZ);
-	int BlockX = (DispX + DispChunk->GetPosX() * cChunkDef::Width);
-	int BlockZ = (DispZ + DispChunk->GetPosZ() * cChunkDef::Width);
+	BLOCKTYPE dispBlock = dispChunk->GetBlock(dispRelCoord);
+	auto dispAbsCoord = dispChunk->RelativeToAbsolute(dispRelCoord);
 
 	// Dispense the item:
-	switch (m_Contents.GetSlot(a_SlotNum).m_ItemType)
+	const cItem & SlotItem = m_Contents.GetSlot(a_SlotNum);
+	if (ItemCategory::IsMinecart(SlotItem.m_ItemType) && IsBlockRail(dispBlock))  // only actually place the minecart if there are rails!
+	{
+		if (m_World->SpawnMinecart(dispAbsCoord.x + 0.5, dispAbsCoord.y + 0.5, dispAbsCoord.z + 0.5, SlotItem.m_ItemType) != cEntity::INVALID_ID)
+		{
+			m_Contents.ChangeSlotCount(a_SlotNum, -1);
+		}
+		return;
+	}
+	switch (SlotItem.m_ItemType)
 	{
 		case E_ITEM_BUCKET:
 		{
-			LOGD("Dispensing empty bucket in slot %d; DispBlock is \"%s\" (%d).", a_SlotNum, ItemTypeToString(DispBlock).c_str(), DispBlock);
-			switch (DispBlock)
+			LOGD("Dispensing empty bucket in slot %d; dispBlock is \"%s\" (%d).", a_SlotNum, ItemTypeToString(dispBlock).c_str(), dispBlock);
+			switch (dispBlock)
 			{
 				case E_BLOCK_STATIONARY_WATER:
 				case E_BLOCK_WATER:
 				{
 					if (ScoopUpLiquid(a_SlotNum, E_ITEM_WATER_BUCKET))
 					{
-						DispChunk->SetBlock(DispX, DispY, DispZ, E_BLOCK_AIR, 0);
+						dispChunk->SetBlock(dispRelCoord, E_BLOCK_AIR, 0);
 					}
 					break;
 				}
@@ -60,7 +69,7 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 				{
 					if (ScoopUpLiquid(a_SlotNum, E_ITEM_LAVA_BUCKET))
 					{
-						DispChunk->SetBlock(DispX, DispY, DispZ, E_BLOCK_AIR, 0);
+						dispChunk->SetBlock(dispRelCoord, E_BLOCK_AIR, 0);
 					}
 					break;
 				}
@@ -75,10 +84,10 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 
 		case E_ITEM_WATER_BUCKET:
 		{
-			LOGD("Dispensing water bucket in slot %d; DispBlock is \"%s\" (%d).", a_SlotNum, ItemTypeToString(DispBlock).c_str(), DispBlock);
-			if (EmptyLiquidBucket(DispBlock, a_SlotNum))
+			LOGD("Dispensing water bucket in slot %d; dispBlock is \"%s\" (%d).", a_SlotNum, ItemTypeToString(dispBlock).c_str(), dispBlock);
+			if (EmptyLiquidBucket(dispBlock, a_SlotNum))
 			{
-				DispChunk->SetBlock(DispX, DispY, DispZ, E_BLOCK_WATER, 0);
+				dispChunk->SetBlock(dispRelCoord, E_BLOCK_WATER, 0);
 			}
 			else
 			{
@@ -89,10 +98,10 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 
 		case E_ITEM_LAVA_BUCKET:
 		{
-			LOGD("Dispensing lava bucket in slot %d; DispBlock is \"%s\" (%d).", a_SlotNum, ItemTypeToString(DispBlock).c_str(), DispBlock);
-			if (EmptyLiquidBucket(DispBlock, a_SlotNum))
+			LOGD("Dispensing lava bucket in slot %d; dispBlock is \"%s\" (%d).", a_SlotNum, ItemTypeToString(dispBlock).c_str(), dispBlock);
+			if (EmptyLiquidBucket(dispBlock, a_SlotNum))
 			{
-				DispChunk->SetBlock(DispX, DispY, DispZ, E_BLOCK_LAVA, 0);
+				dispChunk->SetBlock(dispRelCoord, E_BLOCK_LAVA, 0);
 			}
 			else
 			{
@@ -103,9 +112,9 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 
 		case E_ITEM_SPAWN_EGG:
 		{
-			double MobX = 0.5 + (DispX + DispChunk->GetPosX() * cChunkDef::Width);
-			double MobZ = 0.5 + (DispZ + DispChunk->GetPosZ() * cChunkDef::Width);
-			if (m_World->SpawnMob(MobX, DispY, MobZ, static_cast<eMonsterType>(m_Contents.GetSlot(a_SlotNum).m_ItemDamage)) != cEntity::INVALID_ID)
+			double MobX = 0.5 + dispAbsCoord.x;
+			double MobZ = 0.5 + dispAbsCoord.z;
+			if (m_World->SpawnMob(MobX, dispAbsCoord.y, MobZ, static_cast<eMonsterType>(m_Contents.GetSlot(a_SlotNum).m_ItemDamage), false) != cEntity::INVALID_ID)
 			{
 				m_Contents.ChangeSlotCount(a_SlotNum, -1);
 			}
@@ -115,11 +124,9 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 		case E_BLOCK_TNT:
 		{
 			// Spawn a primed TNT entity, if space allows:
-			if (DispChunk->GetBlock(DispX, DispY, DispZ) == E_BLOCK_AIR)
+			if (!cBlockInfo::IsSolid(dispBlock))
 			{
-				double TNTX = 0.5 + (DispX + DispChunk->GetPosX() * cChunkDef::Width);
-				double TNTZ = 0.5 + (DispZ + DispChunk->GetPosZ() * cChunkDef::Width);
-				m_World->SpawnPrimedTNT(TNTX, DispY + 0.5, TNTZ, 80, 0);  // 80 ticks fuse, no initial velocity
+				m_World->SpawnPrimedTNT(Vector3d(0.5, 0.5, 0.5) + dispAbsCoord, 80, 0);  // 80 ticks fuse, no initial velocity
 				m_Contents.ChangeSlotCount(a_SlotNum, -1);
 			}
 			break;
@@ -128,9 +135,9 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 		case E_ITEM_FLINT_AND_STEEL:
 		{
 			// Spawn fire if the block in front is air.
-			if (DispChunk->GetBlock(DispX, DispY, DispZ) == E_BLOCK_AIR)
+			if (dispBlock == E_BLOCK_AIR)
 			{
-				DispChunk->SetBlock(DispX, DispY, DispZ, E_BLOCK_FIRE, 0);
+				dispChunk->SetBlock(dispRelCoord, E_BLOCK_FIRE, 0);
 
 				bool ItemBroke = m_Contents.DamageItem(a_SlotNum, 1);
 
@@ -144,7 +151,7 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 
 		case E_ITEM_FIRE_CHARGE:
 		{
-			if (SpawnProjectileFromDispenser(BlockX, DispY, BlockZ, cProjectileEntity::pkFireCharge, GetShootVector(Meta) * 20) != cEntity::INVALID_ID)
+			if (SpawnProjectileFromDispenser(dispAbsCoord, cProjectileEntity::pkFireCharge, GetShootVector(meta) * 20) != cEntity::INVALID_ID)
 			{
 				m_Contents.ChangeSlotCount(a_SlotNum, -1);
 			}
@@ -153,7 +160,7 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 
 		case E_ITEM_ARROW:
 		{
-			if (SpawnProjectileFromDispenser(BlockX, DispY, BlockZ, cProjectileEntity::pkArrow, GetShootVector(Meta) * 20 + Vector3d(0, 1, 0)) != cEntity::INVALID_ID)
+			if (SpawnProjectileFromDispenser(dispAbsCoord, cProjectileEntity::pkArrow, GetShootVector(meta) * 30 + Vector3d(0, 1, 0)) != cEntity::INVALID_ID)
 			{
 				m_Contents.ChangeSlotCount(a_SlotNum, -1);
 			}
@@ -162,7 +169,7 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 
 		case E_ITEM_SNOWBALL:
 		{
-			if (SpawnProjectileFromDispenser(BlockX, DispY, BlockZ, cProjectileEntity::pkSnowball, GetShootVector(Meta) * 20 + Vector3d(0, 1, 0)) != cEntity::INVALID_ID)
+			if (SpawnProjectileFromDispenser(dispAbsCoord, cProjectileEntity::pkSnowball, GetShootVector(meta) * 20 + Vector3d(0, 1, 0)) != cEntity::INVALID_ID)
 			{
 				m_Contents.ChangeSlotCount(a_SlotNum, -1);
 			}
@@ -171,7 +178,74 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 
 		case E_ITEM_EGG:
 		{
-			if (SpawnProjectileFromDispenser(BlockX, DispY, BlockZ, cProjectileEntity::pkEgg, GetShootVector(Meta) * 20 + Vector3d(0, 1, 0)) != cEntity::INVALID_ID)
+			if (SpawnProjectileFromDispenser(dispAbsCoord, cProjectileEntity::pkEgg, GetShootVector(meta) * 20 + Vector3d(0, 1, 0)) != cEntity::INVALID_ID)
+			{
+				m_Contents.ChangeSlotCount(a_SlotNum, -1);
+			}
+			break;
+		}
+
+		case E_ITEM_BOTTLE_O_ENCHANTING:
+		{
+			if (SpawnProjectileFromDispenser(dispAbsCoord, cProjectileEntity::pkExpBottle, GetShootVector(meta) * 20 + Vector3d(0, 1, 0)) != cEntity::INVALID_ID)
+			{
+				m_Contents.ChangeSlotCount(a_SlotNum, -1);
+			}
+			break;
+		}
+
+		case E_ITEM_POTION:
+		{
+			if (SpawnProjectileFromDispenser(dispAbsCoord, cProjectileEntity::pkSplashPotion, GetShootVector(meta) * 20 + Vector3d(0, 1, 0), &SlotItem) != cEntity::INVALID_ID)
+			{
+				m_Contents.ChangeSlotCount(a_SlotNum, -1);
+			}
+			break;
+		}
+
+		case E_ITEM_DYE:
+		{
+			if (SlotItem.m_ItemDamage != E_META_DYE_WHITE)
+			{
+				DropFromSlot(a_Chunk, a_SlotNum);
+				break;
+			}
+			if (m_World->GrowRipePlant(dispAbsCoord.x, dispAbsCoord.y, dispAbsCoord.z, true))
+			{
+				m_Contents.ChangeSlotCount(a_SlotNum, -1);
+			}
+			break;
+		}
+
+		case E_ITEM_BOAT:
+		case E_ITEM_SPRUCE_BOAT:
+		case E_ITEM_BIRCH_BOAT:
+		case E_ITEM_JUNGLE_BOAT:
+		case E_ITEM_ACACIA_BOAT:
+		case E_ITEM_DARK_OAK_BOAT:
+		{
+			Vector3d spawnPos = dispAbsCoord;
+			if (IsBlockWater(dispBlock))
+			{
+				// Water next to the dispenser, spawn a boat above the water block
+				spawnPos.y += 1;
+			}
+			else if (IsBlockWater(dispChunk->GetBlock(dispRelCoord.addedY(-1))))
+			{
+				// Water one block below the dispenser, spawn a boat at the dispenser's Y level
+				// No adjustment needed
+			}
+			else
+			{
+				// There's no eligible water block, drop the boat as a pickup
+				DropFromSlot(a_Chunk, a_SlotNum);
+				break;
+			}
+
+			spawnPos += GetShootVector(meta) * 0.8;  // A boat is bigger than one block. Add the shoot vector to put it outside the dispenser.
+			spawnPos += Vector3d(0.5, 0.5, 0.5);
+
+			if (m_World->SpawnBoat(spawnPos, cBoat::ItemToMaterial(SlotItem)))
 			{
 				m_Contents.ChangeSlotCount(a_SlotNum, -1);
 			}
@@ -180,7 +254,10 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 
 		case E_ITEM_FIREWORK_ROCKET:
 		{
-			// TODO: Add the fireworks entity
+			if (SpawnProjectileFromDispenser(dispAbsCoord, cProjectileEntity::pkFirework, GetShootVector(meta) * 20 + Vector3d(0, 1, 0), &SlotItem) != cEntity::INVALID_ID)
+			{
+				m_Contents.ChangeSlotCount(a_SlotNum, -1);
+			}
 			break;
 		}
 
@@ -189,20 +266,17 @@ void cDispenserEntity::DropSpenseFromSlot(cChunk & a_Chunk, int a_SlotNum)
 			DropFromSlot(a_Chunk, a_SlotNum);
 			break;
 		}
-	}  // switch (ItemType)
+	}  // switch (SlotItem.m_ItemType)
 }
 
 
 
 
 
-UInt32 cDispenserEntity::SpawnProjectileFromDispenser(int a_BlockX, int a_BlockY, int a_BlockZ, cProjectileEntity::eKind a_Kind, const Vector3d & a_ShootVector)
+UInt32 cDispenserEntity::SpawnProjectileFromDispenser(Vector3i a_BlockPos, cProjectileEntity::eKind a_Kind, const Vector3d & a_ShootVector, const cItem * a_Item)
 {
-	return m_World->CreateProjectile(
-		static_cast<double>(a_BlockX + 0.5),
-		static_cast<double>(a_BlockY + 0.5),
-		static_cast<double>(a_BlockZ + 0.5),
-		a_Kind, nullptr, nullptr, &a_ShootVector
+	return m_World->CreateProjectile(Vector3d(0.5, 0.5, 0.5) + a_BlockPos,
+		a_Kind, nullptr, a_Item, &a_ShootVector
 	);
 }
 
@@ -212,7 +286,7 @@ UInt32 cDispenserEntity::SpawnProjectileFromDispenser(int a_BlockX, int a_BlockY
 
 Vector3d cDispenserEntity::GetShootVector(NIBBLETYPE a_Meta)
 {
-	switch (a_Meta & 0x7)
+	switch (a_Meta & E_META_DROPSPENSER_FACING_MASK)
 	{
 		case E_META_DROPSPENSER_FACING_YP: return Vector3d( 0,  1,  0);
 		case E_META_DROPSPENSER_FACING_YM: return Vector3d( 0, -1,  0);
@@ -230,9 +304,9 @@ Vector3d cDispenserEntity::GetShootVector(NIBBLETYPE a_Meta)
 
 
 
-bool cDispenserEntity::ScoopUpLiquid(int a_SlotNum, short a_BucketItemType)
+bool cDispenserEntity::ScoopUpLiquid(int a_SlotNum, short a_ResultingBucketItemType)
 {
-	cItem LiquidBucket(a_BucketItemType, 1);
+	cItem LiquidBucket(a_ResultingBucketItemType, 1);
 	if (m_Contents.GetSlot(a_SlotNum).m_ItemCount == 1)
 	{
 		// Special case: replacing one empty bucket with one full bucket

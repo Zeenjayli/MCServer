@@ -5,7 +5,7 @@
 
 #include "../World.h"
 #include "../Entities/Player.h"
-#include "../Tracer.h"
+#include "../LineBlockTracer.h"
 
 
 
@@ -22,22 +22,13 @@ cAggressiveMonster::cAggressiveMonster(const AString & a_ConfigName, eMonsterTyp
 
 
 // What to do if in Chasing State
-void cAggressiveMonster::InStateChasing(std::chrono::milliseconds a_Dt)
+void cAggressiveMonster::InStateChasing(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
-	super::InStateChasing(a_Dt);
+	super::InStateChasing(a_Dt, a_Chunk);
 
-	if (m_Target != nullptr)
+	if (GetTarget() != nullptr)
 	{
-		if (m_Target->IsPlayer())
-		{
-			if (((cPlayer *)m_Target)->IsGameModeCreative())
-			{
-				m_EMState = IDLE;
-				return;
-			}
-		}
-
-		MoveToPosition(m_Target->GetPosition());
+		MoveToPosition(GetTarget()->GetPosition());
 	}
 }
 
@@ -45,13 +36,15 @@ void cAggressiveMonster::InStateChasing(std::chrono::milliseconds a_Dt)
 
 
 
-void cAggressiveMonster::EventSeePlayer(cEntity * a_Entity)
+void cAggressiveMonster::EventSeePlayer(cPlayer * a_Player, cChunk & a_Chunk)
 {
-	if (!((cPlayer *)a_Entity)->IsGameModeCreative())
+	if (!a_Player->CanMobsTarget())
 	{
-		super::EventSeePlayer(a_Entity);
-		m_EMState = CHASING;
+		return;
 	}
+
+	super::EventSeePlayer(a_Player, a_Chunk);
+	m_EMState = CHASING;
 }
 
 
@@ -61,6 +54,11 @@ void cAggressiveMonster::EventSeePlayer(cEntity * a_Entity)
 void cAggressiveMonster::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
 	super::Tick(a_Dt, a_Chunk);
+	if (!IsTicking())
+	{
+		// The base class tick destroyed us
+		return;
+	}
 
 	if (m_EMState == CHASING)
 	{
@@ -68,18 +66,23 @@ void cAggressiveMonster::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 	}
 	else
 	{
-		CheckEventSeePlayer();
+		CheckEventSeePlayer(a_Chunk);
 	}
 
-	if (m_Target == nullptr)
+	auto target = GetTarget();
+	if (target == nullptr)
 	{
 		return;
 	}
 
-	cTracer LineOfSight(GetWorld());
-	Vector3d AttackDirection(m_Target->GetPosition() - GetPosition());
-
-	if (ReachedFinalDestination() && !LineOfSight.Trace(GetPosition(), AttackDirection, (int)AttackDirection.Length()))
+	// TODO: Currently all mobs see through lava, but only Nether-native mobs should be able to.
+	Vector3d MyHeadPosition = GetPosition() + Vector3d(0, GetHeight(), 0);
+	Vector3d TargetPosition = target->GetPosition() + Vector3d(0, target->GetHeight(), 0);
+	if (
+		TargetIsInRange() &&
+		cLineBlockTracer::LineOfSightTrace(*GetWorld(), MyHeadPosition, TargetPosition, cLineBlockTracer::losAirWaterLava) &&
+		(GetHealth() > 0.0)
+	)
 	{
 		// Attack if reached destination, target isn't null, and have a clear line of sight to target (so won't attack through walls)
 		Attack(a_Dt);
@@ -90,33 +93,16 @@ void cAggressiveMonster::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 
 
 
-void cAggressiveMonster::Attack(std::chrono::milliseconds a_Dt)
+bool cAggressiveMonster::Attack(std::chrono::milliseconds a_Dt)
 {
-	m_AttackInterval += (static_cast<float>(a_Dt.count()) / 1000) * m_AttackRate;
-	if ((m_Target == nullptr) || (m_AttackInterval < 3.0))
+	if ((GetTarget() == nullptr) || (m_AttackCoolDownTicksLeft != 0))
 	{
-		return;
+		return false;
 	}
 
 	// Setting this higher gives us more wiggle room for attackrate
-	m_AttackInterval = 0.0;
-	m_Target->TakeDamage(dtMobAttack, this, m_AttackDamage, 0);
-}
+	ResetAttackCooldown();
+	GetTarget()->TakeDamage(dtMobAttack, this, m_AttackDamage, 0);
 
-
-
-
-bool cAggressiveMonster::IsMovingToTargetPosition()
-{
-	// Difference between destination x and target x is negligible (to 10^-12 precision)
-	if (fabsf((float)m_FinalDestination.x - (float)m_Target->GetPosX()) < std::numeric_limits<float>::epsilon())
-	{
-		return false;
-	}
-	// Difference between destination z and target z is negligible (to 10^-12 precision)
-	else if (fabsf((float)m_FinalDestination.z - (float)m_Target->GetPosZ()) > std::numeric_limits<float>::epsilon())
-	{
-		return false;
-	}
 	return true;
 }

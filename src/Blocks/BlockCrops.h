@@ -1,104 +1,124 @@
 
 #pragma once
 
-#include "BlockHandler.h"
+#include "BlockPlant.h"
 #include "../FastRandom.h"
 
 
 
 
 
-/// Common class that takes care of carrots, potatoes and wheat
-class cBlockCropsHandler :
-	public cBlockHandler
+/** Common class that takes care of beetroots, carrots, potatoes and wheat */
+template <NIBBLETYPE RipeMeta>
+class cBlockCropsHandler:
+	public cBlockPlant<true>
 {
+	using super = cBlockPlant<true>;
+
 public:
-	cBlockCropsHandler(BLOCKTYPE a_BlockType)
-		: cBlockHandler(a_BlockType)
+
+	cBlockCropsHandler(BLOCKTYPE a_BlockType):
+		super(a_BlockType)
 	{
 	}
 
 
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_Meta) override
-	{
-		cFastRandom rand;
 
-		if (a_Meta == 0x7)
+
+
+	virtual cItems ConvertToPickups(NIBBLETYPE a_BlockMeta, cBlockEntity * a_BlockEntity, const cEntity * a_Digger, const cItem * a_Tool) override
+	{
+		auto & rand = GetRandomProvider();
+
+		// If not fully grown, drop the "seed" of whatever is growing:
+		if (a_BlockMeta < RipeMeta)
 		{
-			// Is fully grown, drop the entire produce:
 			switch (m_BlockType)
 			{
-				case E_BLOCK_CROPS:
-				{
-					a_Pickups.push_back(cItem(E_ITEM_WHEAT, 1, 0));
-					a_Pickups.push_back(cItem(E_ITEM_SEEDS, (char)(1 + (rand.NextInt(3) + rand.NextInt(3)) / 2), 0));  // [1 .. 3] with high preference of 2
-					break;
-				}
-				case E_BLOCK_CARROTS:
-				{
-					a_Pickups.push_back(cItem(E_ITEM_CARROT, (char)(1 + (rand.NextInt(3) + rand.NextInt(3)) / 2), 0));  // [1 .. 3] with high preference of 2
-					break;
-				}
-				case E_BLOCK_POTATOES:
-				{
-					a_Pickups.push_back(cItem(E_ITEM_POTATO, (char)(1 + (rand.NextInt(3) + rand.NextInt(3)) / 2), 0));  // [1 .. 3] with high preference of 2
-					if (rand.NextInt(21) == 0)
-					{
-						// With a 5% chance, drop a poisonous potato as well
-						a_Pickups.push_back(cItem(E_ITEM_POISONOUS_POTATO, 1, 0));
-					}
-					break;
-				}
-				default:
-				{
-					ASSERT(!"Unhandled block type");
-					break;
-				}
-			}  // switch (m_BlockType)
-		}
-		else
-		{
-			// Drop 1 item of whatever is growing
-			switch (m_BlockType)
-			{
-				case E_BLOCK_CROPS:    a_Pickups.push_back(cItem(E_ITEM_SEEDS,  1, 0)); break;
-				case E_BLOCK_CARROTS:  a_Pickups.push_back(cItem(E_ITEM_CARROT, 1, 0)); break;
-				case E_BLOCK_POTATOES: a_Pickups.push_back(cItem(E_ITEM_POTATO, 1, 0)); break;
-				default:
-				{
-					ASSERT(!"Unhandled block type");
-					break;
-				}
+				case E_BLOCK_BEETROOTS: return cItem(E_ITEM_BEETROOT_SEEDS, 1, 0); break;
+				case E_BLOCK_CROPS:     return cItem(E_ITEM_SEEDS,          1, 0); break;
+				case E_BLOCK_CARROTS:   return cItem(E_ITEM_CARROT,         1, 0); break;
+				case E_BLOCK_POTATOES:  return cItem(E_ITEM_POTATO,         1, 0); break;
 			}
+			ASSERT(!"Unhandled block type");
+			return {};
 		}
-	}
-	
-	
-	virtual void OnUpdate(cChunkInterface & cChunkInterface, cWorldInterface & a_WorldInterface, cBlockPluginInterface & a_PluginInterface, cChunk & a_Chunk, int a_RelX, int a_RelY, int a_RelZ) override
-	{
-		NIBBLETYPE Meta     = a_Chunk.GetMeta      (a_RelX, a_RelY, a_RelZ);
-		NIBBLETYPE Light    = a_Chunk.GetBlockLight(a_RelX, a_RelY, a_RelZ);
-		NIBBLETYPE SkyLight = a_Chunk.GetSkyLight  (a_RelX, a_RelY, a_RelZ);
 
-		if (SkyLight > Light)
+		// Fully grown, drop the crop's produce:
+		cItems res;
+		switch (m_BlockType)
 		{
-			Light = SkyLight;
-		}
-		
-		if ((Meta < 7) && (Light > 8))
-		{
-			a_Chunk.FastSetBlock(a_RelX, a_RelY, a_RelZ, m_BlockType, ++Meta);
-		}
-		else if (Light < 9)
-		{
-			a_Chunk.GetWorld()->DigBlock(a_RelX + a_Chunk.GetPosX() * cChunkDef::Width, a_RelY, a_RelZ + a_Chunk.GetPosZ() * cChunkDef::Width);
-		}
+			case E_BLOCK_BEETROOTS:
+			{
+				char SeedCount = 1 + ((rand.RandInt<char>(2) + rand.RandInt<char>(2)) / 2);  // [1 .. 3] with high preference of 2
+				res.Add(E_ITEM_BEETROOT_SEEDS, SeedCount, 0);
+				char BeetrootCount = 1 + ((rand.RandInt<char>(2) + rand.RandInt<char>(2)) / 2);  // [1 .. 3] with high preference of 2
+				res.Add(E_ITEM_BEETROOT, BeetrootCount, 0);
+				break;
+			}
+			case E_BLOCK_CROPS:
+			{
+				res.Add(E_ITEM_WHEAT, 1, 0);
+				res.Add(E_ITEM_SEEDS, 1 + ((rand.RandInt<char>(2) + rand.RandInt<char>(2)) / 2), 0);  // [1 .. 3] with high preference of 2
+				break;
+			}
+			case E_BLOCK_CARROTS:
+			{
+				res.Add(E_ITEM_CARROT, 1 + ((rand.RandInt<char>(2) + rand.RandInt<char>(2)) / 2), 0);  // [1 .. 3] with high preference of 2
+				break;
+			}
+			case E_BLOCK_POTATOES:
+			{
+				res.Add(E_ITEM_POTATO, 1 + ((rand.RandInt<char>(2) + rand.RandInt<char>(2)) / 2), 0);  // [1 .. 3] with high preference of 2
+				if (rand.RandBool(0.05))
+				{
+					// With a 5% chance, drop a poisonous potato as well
+					res.emplace_back(E_ITEM_POISONOUS_POTATO, 1, 0);
+				}
+				break;
+			}
+			default:
+			{
+				ASSERT(!"Unhandled block type");
+				break;
+			}
+		}  // switch (m_BlockType)
+		return res;
 	}
+
+
+
+
+
+	virtual int Grow(cChunk & a_Chunk, Vector3i a_RelPos, int a_NumStages = 1) override
+	{
+		auto oldMeta = a_Chunk.GetMeta(a_RelPos);
+		if (oldMeta >= RipeMeta)
+		{
+			// Already ripe
+			return 0;
+		}
+		auto newMeta = std::min<int>(oldMeta + a_NumStages, RipeMeta);
+		ASSERT(newMeta > oldMeta);
+		a_Chunk.GetWorld()->SetBlock(a_Chunk.RelativeToAbsolute(a_RelPos), m_BlockType, static_cast<NIBBLETYPE>(newMeta));
+		return newMeta - oldMeta;
+	}
+
+
+
 
 
 	virtual bool CanBeAt(cChunkInterface & a_ChunkInterface, int a_RelX, int a_RelY, int a_RelZ, const cChunk & a_Chunk) override
 	{
 		return ((a_RelY > 0) && (a_Chunk.GetBlock(a_RelX, a_RelY - 1, a_RelZ) == E_BLOCK_FARMLAND));
+	}
+
+
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 7;
 	}
 } ;
 

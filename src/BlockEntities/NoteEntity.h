@@ -2,7 +2,6 @@
 #pragma once
 
 #include "BlockEntity.h"
-#include "RedstonePoweredEntity.h"
 
 
 
@@ -14,7 +13,12 @@ enum ENUM_NOTE_INSTRUMENTS
 	E_INST_DOUBLE_BASS = 1,
 	E_INST_SNARE_DRUM  = 2,
 	E_INST_CLICKS      = 3,
-	E_INST_BASS_DRUM   = 4
+	E_INST_BASS_DRUM   = 4,
+	E_INST_FLUTE       = 5,
+	E_INST_BELL        = 6,
+	E_INST_GUITAR      = 7,
+	E_INST_CHIME       = 8,
+	E_INST_XYLOPHONE   = 9
 };
 
 
@@ -25,40 +29,32 @@ enum ENUM_NOTE_INSTRUMENTS
 
 class cNoteEntity :
 	public cBlockEntity
-	// tolua_end
-	, public cRedstonePoweredEntity
-	// tolua_begin
 {
-	typedef cBlockEntity super;
-public:
-
 	// tolua_end
+
+	using super = cBlockEntity;
+
+public:  // tolua_export
 
 	BLOCKENTITY_PROTODEF(cNoteEntity)
-	
-	/// Creates a new note entity. a_World may be nullptr
-	cNoteEntity(int a_X, int a_Y, int a_Z, cWorld * a_World);
-	virtual ~cNoteEntity() {}
+
+	/** Creates a new note entity. a_World may be nullptr */
+	cNoteEntity(BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, Vector3i a_Pos, cWorld * a_World);
+	virtual ~cNoteEntity() override {}
 
 	// tolua_begin
-	
+
 	char GetPitch(void);
 	void SetPitch(char a_Pitch);
 	void IncrementPitch(void);
 	void MakeSound(void);
-	
+
 	// tolua_end
-	
-	virtual void UsedBy(cPlayer * a_Player) override;
+
+	// cBlockEntity overrides:
+	virtual void CopyFrom(const cBlockEntity & a_Src) override;
+	virtual bool UsedBy(cPlayer * a_Player) override;
 	virtual void SendTo(cClientHandle &) override {}
-	
-	virtual void SetRedstonePower(bool a_Value)
-	{
-		if (a_Value)
-		{
-			MakeSound();
-		}
-	}
 
 private:
 	char m_Pitch;

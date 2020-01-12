@@ -18,9 +18,9 @@ cScoreboardSerializer::cScoreboardSerializer(const AString & a_WorldName, cScore
 	m_ScoreBoard(a_ScoreBoard)
 {
 	AString DataPath;
-	Printf(DataPath, "%s%cdata", a_WorldName.c_str(), cFile::PathSeparator);
+	Printf(DataPath, "%s%cdata", a_WorldName.c_str(), cFile::PathSeparator());
 
-	m_Path = DataPath + cFile::PathSeparator + "scoreboard.dat";
+	m_Path = DataPath + cFile::PathSeparator() + "scoreboard.dat";
 
 	cFile::CreateFolder(FILE_IO_PREFIX + DataPath);
 }
@@ -67,7 +67,7 @@ bool cScoreboardSerializer::Save(void)
 	SaveScoreboardToNBT(Writer);
 
 	Writer.Finish();
-	
+
 	#ifdef _DEBUG
 	cParsedNBT TestParse(Writer.GetResult().data(), Writer.GetResult().size());
 	ASSERT(TestParse.IsValid());
@@ -102,7 +102,7 @@ void cScoreboardSerializer::SaveScoreboardToNBT(cFastNBTWriter & a_Writer)
 	a_Writer.BeginCompound("data");
 
 	a_Writer.BeginList("Objectives", TAG_Compound);
-	
+
 	for (cScoreboard::cObjectiveMap::const_iterator it = m_ScoreBoard->m_Objectives.begin(); it != m_ScoreBoard->m_Objectives.end(); ++it)
 	{
 		const cObjective & Objective = it->second;
@@ -133,7 +133,7 @@ void cScoreboardSerializer::SaveScoreboardToNBT(cFastNBTWriter & a_Writer)
 
 			a_Writer.AddString("Name", it2->first);
 			a_Writer.AddString("Objective", it->first);
-			
+
 			a_Writer.EndCompound();
 		}
 	}
@@ -141,7 +141,7 @@ void cScoreboardSerializer::SaveScoreboardToNBT(cFastNBTWriter & a_Writer)
 	a_Writer.EndList();  // PlayerScores
 
 	a_Writer.BeginList("Teams", TAG_Compound);
-	
+
 	for (cScoreboard::cTeamMap::const_iterator it = m_ScoreBoard->m_Teams.begin(); it != m_ScoreBoard->m_Teams.end(); ++it)
 	{
 		const cTeam & Team = it->second;

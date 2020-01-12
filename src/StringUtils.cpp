@@ -5,9 +5,7 @@
 
 #include "Globals.h"
 
-#if defined(ANDROID_NDK)
-#include <ctype.h>
-#endif
+#include "fmt/printf.h"
 
 #ifdef _MSC_VER
 	// Under MSVC, link to WinSock2 (needed by RawBEToUTF8's byteswapping)
@@ -18,60 +16,46 @@
 
 
 
-AString & AppendVPrintf(AString & str, const char * format, va_list args)
+/** Returns the value of the single hex digit.
+Returns 0xff on failure. */
+static unsigned char HexToDec(char a_HexChar)
+{
+	switch (a_HexChar)
+	{
+		case '0': return 0;
+		case '1': return 1;
+		case '2': return 2;
+		case '3': return 3;
+		case '4': return 4;
+		case '5': return 5;
+		case '6': return 6;
+		case '7': return 7;
+		case '8': return 8;
+		case '9': return 9;
+		case 'a': return 10;
+		case 'b': return 11;
+		case 'c': return 12;
+		case 'd': return 13;
+		case 'e': return 14;
+		case 'f': return 15;
+		case 'A': return 10;
+		case 'B': return 11;
+		case 'C': return 12;
+		case 'D': return 13;
+		case 'E': return 14;
+		case 'F': return 15;
+	}
+	return 0xff;
+}
+
+
+
+
+
+AString & Printf(AString & str, const char * format, fmt::ArgList args)
 {
 	ASSERT(format != nullptr);
-	
-	char buffer[2048];
-	int len;
-	#ifdef va_copy
-	va_list argsCopy;
-	va_copy(argsCopy, args);
-	#else
-	#define argsCopy args
-	#endif
-	#ifdef _MSC_VER
-	// MS CRT provides secure printf that doesn't behave like in the C99 standard
-	if ((len = _vsnprintf_s(buffer, ARRAYCOUNT(buffer), _TRUNCATE, format, argsCopy)) != -1)
-	#else  // _MSC_VER
-	if ((len = vsnprintf(buffer, ARRAYCOUNT(buffer), format, argsCopy)) < static_cast<int>(ARRAYCOUNT(buffer)))
-	#endif  // else _MSC_VER
-	{
-		// The result did fit into the static buffer
-		#ifdef va_copy
-		va_end(argsCopy);
-		#endif
-		str.append(buffer, static_cast<size_t>(len));
-		return str;
-	}
-	#ifdef va_copy
-	va_end(argsCopy);
-	#endif
-	
-	// The result did not fit into the static buffer, use a dynamic buffer:
-	#ifdef _MSC_VER
-	// for MS CRT, we need to calculate the result length
-	len = _vscprintf(format, args);
-	if (len == -1)
-	{
-		return str;
-	}
-	#endif  // _MSC_VER
-	
-	// Allocate a buffer and printf into it:
-	#ifdef va_copy
-	va_copy(argsCopy, args);
-	#endif
-	std::vector<char> Buffer(static_cast<size_t>(len) + 1);
-	#ifdef _MSC_VER
-	vsprintf_s(&(Buffer.front()), Buffer.size(), format, argsCopy);
-	#else  // _MSC_VER
-	vsnprintf(&(Buffer.front()), Buffer.size(), format, argsCopy);
-	#endif  // else _MSC_VER
-	str.append(&(Buffer.front()), Buffer.size() - 1);
-	#ifdef va_copy
-	va_end(argsCopy);
-	#endif
+	str = fmt::sprintf(format, args);
 	return str;
 }
 
@@ -79,41 +63,10 @@ AString & AppendVPrintf(AString & str, const char * format, va_list args)
 
 
 
-AString & Printf(AString & str, const char * format, ...)
+AString Printf(const char * format, fmt::ArgList args)
 {
-	str.clear();
-	va_list args;
-	va_start(args, format);
-	std::string & retval = AppendVPrintf(str, format, args);
-	va_end(args);
-	return retval;
-}
-
-
-
-
-
-AString Printf(const char * format, ...)
-{
-	AString res;
-	va_list args;
-	va_start(args, format);
-	AppendVPrintf(res, format, args);
-	va_end(args);
-	return res;
-}
-
-
-
-
-
-AString & AppendPrintf(AString & dst, const char * format, ...)
-{
-	va_list args;
-	va_start(args, format);
-	std::string & retval = AppendVPrintf(dst, format, args);
-	va_end(args);
-	return retval;
+	ASSERT(format != nullptr);
+	return fmt::sprintf(format, args);
 }
 
 
@@ -136,6 +89,7 @@ AStringVector StringSplit(const AString & str, const AString & delim)
 	}
 	return results;
 }
+
 
 
 
@@ -196,6 +150,43 @@ AStringVector StringSplitWithQuotes(const AString & str, const AString & delim)
 
 
 
+
+AString StringJoin(const AStringVector & a_Strings, const AString & a_Delimeter)
+{
+	if (a_Strings.empty())
+	{
+		return {};
+	}
+
+	// Do a dry run to gather the size
+	const auto DelimSize = a_Delimeter.size();
+	size_t ResultSize = a_Strings[0].size();
+	std::for_each(a_Strings.begin() + 1, a_Strings.end(),
+		[&](const AString & a_String)
+		{
+			ResultSize += DelimSize;
+			ResultSize += a_String.size();
+		}
+	);
+
+	// Now do the actual join
+	AString Result;
+	Result.reserve(ResultSize);
+	Result.append(a_Strings[0]);
+	std::for_each(a_Strings.begin() + 1, a_Strings.end(),
+		[&](const AString & a_String)
+		{
+			Result += a_Delimeter;
+			Result += a_String;
+		}
+	);
+	return Result;
+}
+
+
+
+
+
 AStringVector StringSplitAndTrim(const AString & str, const AString & delim)
 {
 	AStringVector results;
@@ -216,13 +207,14 @@ AStringVector StringSplitAndTrim(const AString & str, const AString & delim)
 
 
 
+
 AString TrimString(const AString & str)
 {
 	size_t len = str.length();
 	size_t start = 0;
 	while (start < len)
 	{
-		if (str[start] > 32)
+		if (static_cast<unsigned char>(str[start]) > 32)
 		{
 			break;
 		}
@@ -232,17 +224,17 @@ AString TrimString(const AString & str)
 	{
 		return "";
 	}
-	
+
 	size_t end = len;
 	while (end >= start)
 	{
-		if (str[end] > 32)
+		if (static_cast<unsigned char>(str[end]) > 32)
 		{
 			break;
 		}
 		--end;
 	}
-	
+
 	return str.substr(start, end - start + 1);
 }
 
@@ -272,8 +264,9 @@ AString & InPlaceUppercase(AString & s)
 
 AString StrToLower(const AString & s)
 {
-	AString res(s);
-	std::transform(res.begin(), res.end(), res.begin(), ::tolower);
+	AString res;
+	res.resize(s.size());
+	std::transform(s.begin(), s.end(), res.begin(), ::tolower);
 	return res;
 }
 
@@ -283,8 +276,9 @@ AString StrToLower(const AString & s)
 
 AString StrToUpper(const AString & s)
 {
-	AString res(s);
-	std::transform(res.begin(), res.end(), res.begin(), ::toupper);
+	AString res;
+	res.resize(s.size());
+	std::transform(s.begin(), s.end(), res.begin(), ::toupper);
 	return res;
 }
 
@@ -295,11 +289,9 @@ AString StrToUpper(const AString & s)
 int NoCaseCompare(const AString & s1, const AString & s2)
 {
 	#ifdef _MSC_VER
-		// MSVC has stricmp that compares case-insensitive:
 		return _stricmp(s1.c_str(), s2.c_str());
 	#else
-		// Do it the hard way - convert both strings to lowercase:
-		return StrToLower(s1).compare(StrToLower(s2));
+		return strcasecmp(s1.c_str(), s2.c_str());
 	#endif  // else _MSC_VER
 }
 
@@ -320,8 +312,8 @@ size_t RateCompareString(const AString & s1, const AString & s2)
 
 	for (size_t i = 0; i < s1Length; i++)
 	{
-		char c1 = (char)toupper(s1[i]);
-		char c2 = (char)toupper(s2[i]);
+		char c1 = static_cast<char>(toupper(s1[i]));
+		char c2 = static_cast<char>(toupper(s2[i]));
 		if (c1 == c2)
 		{
 			++MatchedLetters;
@@ -340,13 +332,20 @@ size_t RateCompareString(const AString & s1, const AString & s2)
 
 void ReplaceString(AString & iHayStack, const AString & iNeedle, const AString & iReplaceWith)
 {
+	// find always returns the current position for an empty needle; prevent endless loop
+	if (iNeedle.empty())
+	{
+		return;
+	}
+
 	size_t pos1 = iHayStack.find(iNeedle);
 	while (pos1 != AString::npos)
 	{
 		iHayStack.replace( pos1, iNeedle.size(), iReplaceWith);
-		pos1 = iHayStack.find(iNeedle, pos1);
+		pos1 = iHayStack.find(iNeedle, pos1 + iReplaceWith.size());
 	}
 }
+
 
 
 
@@ -357,37 +356,7 @@ AString & RawBEToUTF8(const char * a_RawData, size_t a_NumShorts, AString & a_UT
 	a_UTF8.reserve(3 * a_NumShorts / 2);  // a quick guess of the resulting size
 	for (size_t i = 0; i < a_NumShorts; i++)
 	{
-		int c = GetBEShort(&a_RawData[i * 2]);
-		if (c < 0x80)
-		{
-			a_UTF8.push_back((char)c);
-		}
-		else if (c < 0x800)
-		{
-			a_UTF8.push_back((char)(192 + c / 64));
-			a_UTF8.push_back((char)(128 + c % 64));
-		}
-		else if (c - 0xd800 < 0x800)
-		{
-			// Error, silently drop
-		}
-		else if (c < 0x10000)
-		{
-			a_UTF8.push_back(static_cast<char>(224 + c / 4096));
-			a_UTF8.push_back(static_cast<char>(128 + (c / 64) % 64));
-			a_UTF8.push_back(static_cast<char>(128 + c % 64));
-		}
-		else if (c < 0x110000)
-		{
-			a_UTF8.push_back(static_cast<char>(240 + c / 262144));
-			a_UTF8.push_back(static_cast<char>(128 + (c / 4096) % 64));
-			a_UTF8.push_back(static_cast<char>(128 + (c / 64) % 64));
-			a_UTF8.push_back(static_cast<char>(128 + c % 64));
-		}
-		else
-		{
-			// Error, silently drop
-		}
+		a_UTF8.append(UnicodeCharToUtf8(GetBEUShort(&a_RawData[i * 2])));
 	}
 	return a_UTF8;
 }
@@ -395,8 +364,62 @@ AString & RawBEToUTF8(const char * a_RawData, size_t a_NumShorts, AString & a_UT
 
 
 
+
+AString UnicodeCharToUtf8(unsigned a_UnicodeChar)
+{
+	if (a_UnicodeChar < 0x80)
+	{
+		return AString{static_cast<char>(a_UnicodeChar)};
+	}
+	else if (a_UnicodeChar < 0x800)
+	{
+		return AString
+		{
+			static_cast<char>(192 + a_UnicodeChar / 64),
+			static_cast<char>(128 + a_UnicodeChar % 64),
+		};
+	}
+	else if (a_UnicodeChar - 0xd800 < 0x800)
+	{
+		// Error
+		return AString();
+	}
+	else if (a_UnicodeChar < 0x10000)
+	{
+		return AString
+		{
+			static_cast<char>(224 + a_UnicodeChar / 4096),
+			static_cast<char>(128 + (a_UnicodeChar / 64) % 64),
+			static_cast<char>(128 + a_UnicodeChar % 64)
+		};
+	}
+	else if (a_UnicodeChar < 0x110000)
+	{
+		return AString
+		{
+			static_cast<char>(240 + a_UnicodeChar / 262144),
+			static_cast<char>(128 + (a_UnicodeChar / 4096) % 64),
+			static_cast<char>(128 + (a_UnicodeChar / 64) % 64),
+			static_cast<char>(128 + a_UnicodeChar % 64),
+		};
+	}
+	else
+	{
+		// Error
+		return AString();
+	}
+}
+
+
+
+
+
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#endif
 // UTF-8 conversion code adapted from:
-//  http://stackoverflow.com/questions/2867123/convert-utf-16-to-utf-8-under-windows-and-linux-in-c
+//  https://stackoverflow.com/questions/2867123/convert-utf-16-to-utf-8-under-windows-and-linux-in-c
 
 ////////////////////////////////////////////////////////////////////////////////
 // Begin of Unicode, Inc.'s code / information
@@ -500,13 +523,13 @@ static bool isLegalUTF8(const unsigned char * source, int length)
 
 
 
-AString UTF8ToRawBEUTF16(const char * a_UTF8, size_t a_UTF8Length)
+std::u16string UTF8ToRawBEUTF16(const AString & a_UTF8)
 {
-	AString UTF16;
-	UTF16.reserve(a_UTF8Length * 3);
+	std::u16string UTF16;
+	UTF16.reserve(a_UTF8.size() * 2);
 
-	const unsigned char * source    = (const unsigned char *)a_UTF8;
-	const unsigned char * sourceEnd = source + a_UTF8Length;
+	const unsigned char * source    = reinterpret_cast<const unsigned char *>(a_UTF8.data());
+	const unsigned char * sourceEnd = source + a_UTF8.size();
 	const int halfShift  = 10;  // used for shifting by 10 bits
 	const unsigned int halfBase = 0x0010000UL;
 	const unsigned int halfMask = 0x3ffUL;
@@ -524,7 +547,7 @@ AString UTF8ToRawBEUTF16(const char * a_UTF8, size_t a_UTF8Length)
 		{
 			return UTF16;
 		}
-		
+
 		// The cases all fall through. See "Note A" below.
 		switch (extraBytesToRead)
 		{
@@ -545,23 +568,23 @@ AString UTF8ToRawBEUTF16(const char * a_UTF8, size_t a_UTF8Length)
 				// UTF-16 surrogate values are illegal in UTF-32
 				ch = ' ';
 			}
-			unsigned short v = htons((unsigned short)ch);
-			UTF16.append((const char *)&v, 2);
+			unsigned short v = htons(static_cast<unsigned short>(ch));
+			UTF16.push_back(static_cast<char16_t>(v));
 		}
 		else if (ch > UNI_MAX_UTF16)
 		{
 			// Invalid value, replace with a space
 			unsigned short v = htons(' ');
-			UTF16.append((const char *)&v, 2);
+			UTF16.push_back(static_cast<char16_t>(v));
 		}
 		else
 		{
 			// target is a character in range 0xFFFF - 0x10FFFF.
 			ch -= halfBase;
-			unsigned short v1 = htons((ch >> halfShift) + UNI_SUR_HIGH_START);
-			unsigned short v2 = htons((ch & halfMask) + UNI_SUR_LOW_START);
-			UTF16.append((const char *)&v1, 2);
-			UTF16.append((const char *)&v2, 2);
+			auto v1 = htons(static_cast<uint16_t>((ch >> halfShift) + UNI_SUR_HIGH_START));
+			auto v2 = htons(static_cast<uint16_t>((ch & halfMask) + UNI_SUR_LOW_START));
+			UTF16.push_back(static_cast<char16_t>(v1));
+			UTF16.push_back(static_cast<char16_t>(v2));
 		}
 	}
 	return UTF16;
@@ -591,13 +614,15 @@ are equivalent to the following loop:
 ////////////////////////////////////////////////////////////////////////////////
 // End of Unicode, Inc.'s code / information
 ////////////////////////////////////////////////////////////////////////////////
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
+#endif
 
 
 
 
 
-
-#define HEX(x) ((x) > 9 ? (x) + 'A' - 10 : (x) + '0')
+#define HEX(x) static_cast<char>((x) > 9 ? (x) + 'A' - 10 : (x) + '0')
 
 /**
 format binary data this way:
@@ -605,50 +630,36 @@ format binary data this way:
 */
 AString & CreateHexDump(AString & a_Out, const void * a_Data, size_t a_Size, size_t a_BytesPerLine)
 {
-	ASSERT(a_BytesPerLine <= 120);  // Due to using a fixed size line buffer; increase line[]'s size to lift this max
-	char line[512];
-	char * p;
-	char * q;
-	
-	a_Out.reserve(a_Size / a_BytesPerLine * (18 + 6 * a_BytesPerLine));
+	fmt::MemoryWriter Output;
+	/* If formatting the data from the comment above:
+		Hex holds:   "31 32 33 34 35 36 37 38 39 30 61 62 63 64 65 66 "
+		Chars holds: "1234567890abcdef" */
+	fmt::MemoryWriter Hex, Chars;
+
+	if (a_Size > 0)
+	{
+		// Same as std::ceil(static_cast<float>(a_Size) / a_BytesPerLine);
+		const size_t NumLines = a_Size / a_BytesPerLine + (a_Size % a_BytesPerLine != 0);
+		const size_t CharsPerLine = 14 + 4 * a_BytesPerLine;
+		Output.buffer().reserve(NumLines * CharsPerLine);
+	}
+
 	for (size_t i = 0; i < a_Size; i += a_BytesPerLine)
 	{
-		size_t k = a_Size - i;
-		if (k > a_BytesPerLine)
-		{
-			k = a_BytesPerLine;
-		}
-		#ifdef _MSC_VER
-		// MSVC provides a "secure" version of sprintf()
-		int Count = sprintf_s(line, sizeof(line), "%08x:", (unsigned)i);
-		#else
-		int Count = sprintf(line, "%08x:", (unsigned)i);
-		#endif
-		// Remove the terminating nullptr / leftover garbage in line, after the sprintf-ed value
-		memset(line + Count, 32, sizeof(line) - static_cast<size_t>(Count));
-		p = line + 10;
-		q = p + 2 + a_BytesPerLine * 3 + 1;
+		size_t k = std::min(a_Size - i, a_BytesPerLine);
 		for (size_t j = 0; j < k; j++)
 		{
-			Byte c = (reinterpret_cast<const Byte *>(a_Data))[i + j];
-			p[0] = HEX(c >> 4);
-			p[1] = HEX(c & 0xf);
-			p[2] = ' ';
-			if (c >= ' ')
-			{
-				q[0] = static_cast<char>(c);
-			}
-			else
-			{
-				q[0] = '.';
-			}
-			p += 3;
-			q ++;
+			Byte c = (static_cast<const Byte *>(a_Data))[i + j];
+			Hex << HEX(c >> 4) << HEX(c & 0xf) << ' ';
+			Chars << ((c >= ' ') ? static_cast<char>(c) : '.');
 		}  // for j
-		q[0] = '\n';
-		q[1] = 0;
-		a_Out.append(line);
+
+		// Write Hex with a dynamic fixed width
+		Output.write("{0:08x}: {1:{2}}   {3}\n", i, Hex.c_str(), a_BytesPerLine * 3, Chars.c_str());
+		Hex.clear();
+		Chars.clear();
 	}  // for i
+	a_Out.append(Output.data(), Output.size());
 	return a_Out;
 }
 
@@ -712,58 +723,99 @@ AString StripColorCodes(const AString & a_Message)
 
 
 
-AString URLDecode(const AString & a_String)
+std::pair<bool, AString> URLDecode(const AString & a_Text)
 {
 	AString res;
-	size_t len = a_String.length();
+	auto len = a_Text.size();
 	res.reserve(len);
 	for (size_t i = 0; i < len; i++)
 	{
-		char ch = a_String[i];
-		if ((ch != '%') || (i > len - 3))
+		if (a_Text[i] == '+')
 		{
-			res.push_back(ch);
+			res.push_back(' ');
 			continue;
 		}
-		// Decode the hex value:
-		char hi = a_String[i + 1], lo = a_String[i + 2];
-		if ((hi >= '0') && (hi <= '9'))
+		if (a_Text[i] != '%')
 		{
-			hi = hi - '0';
+			res.push_back(a_Text[i]);
+			continue;
 		}
-		else if ((hi >= 'a') && (hi <= 'f'))
+		if (i + 1 >= len)
 		{
-			hi = hi - 'a' + 10;
+			// String too short for an encoded value
+			return std::make_pair(false, AString());
 		}
-		else if ((hi >= 'A') && (hi <= 'F'))
+		if ((a_Text[i + 1] == 'u') || (a_Text[i + 1] == 'U'))
 		{
-			hi = hi - 'F' + 10;
+			// Unicode char "%u0xxxx"
+			if (i + 6 >= len)
+			{
+				return std::make_pair(false, AString());
+			}
+			if (a_Text[i + 2] != '0')
+			{
+				return std::make_pair(false, AString());
+			}
+			unsigned v1 = HexToDec(a_Text[i + 3]);
+			unsigned v2 = HexToDec(a_Text[i + 4]);
+			unsigned v3 = HexToDec(a_Text[i + 5]);
+			unsigned v4 = HexToDec(a_Text[i + 6]);
+			if ((v1 == 0xff) || (v2 == 0xff) || (v4 == 0xff) || (v3 == 0xff))
+			{
+				// Invalid hex numbers
+				return std::make_pair(false, AString());
+			}
+			res.append(UnicodeCharToUtf8((v1 << 12) | (v2 << 8) | (v3 << 4) | v4));
+			i = i + 6;
 		}
 		else
 		{
-			res.push_back(ch);
-			continue;
+			// Regular char "%xx":
+			if (i + 2 >= len)
+			{
+				return std::make_pair(false, AString());
+			}
+			auto v1 = HexToDec(a_Text[i + 1]);
+			auto v2 = HexToDec(a_Text[i + 2]);
+			if ((v1 == 0xff) || (v2 == 0xff))
+			{
+				// Invalid hex numbers
+				return std::make_pair(false, AString());
+			}
+			res.push_back(static_cast<char>((v1 << 4) | v2));
+			i = i + 2;
 		}
-		if ((lo >= '0') && (lo <= '9'))
+	}  // for i - a_Text[i]
+	return std::make_pair(true, res);
+}
+
+
+
+
+
+AString URLEncode(const AString & a_Text)
+{
+	AString res;
+	auto len = a_Text.size();
+	res.reserve(len);
+	static const char HEX[] = "0123456789abcdef";
+	for (size_t i = 0; i < len; ++i)
+	{
+		if (isalnum(a_Text[i]))
 		{
-			lo = lo - '0';
+			res.push_back(a_Text[i]);
 		}
-		else if ((lo >= 'a') && (lo <= 'f'))
+		else if (a_Text[i] == ' ')
 		{
-			lo = lo - 'a' + 10;
-		}
-		else if ((lo >= 'A') && (lo <= 'F'))
-		{
-			lo = lo - 'A' + 10;
+			res.push_back('+');
 		}
 		else
 		{
-			res.push_back(ch);
-			continue;
+			res.push_back('%');
+			res.push_back(HEX[static_cast<unsigned char>(a_Text[i]) >> 4]);
+			res.push_back(HEX[static_cast<unsigned char>(a_Text[i]) & 0x0f]);
 		}
-		res.push_back(static_cast<char>((hi << 4) | lo));
-		i += 2;
-	}  // for i - a_String[]
+	}
 	return res;
 }
 
@@ -782,7 +834,7 @@ AString ReplaceAllCharOccurrences(const AString & a_String, char a_From, char a_
 
 
 
-/// Converts one Hex character in a Base64 encoding into the data value
+/** Converts one Hex character in a Base64 encoding into the data value */
 static inline int UnBase64(char c)
 {
 	if ((c >='A') && (c <= 'Z'))
@@ -870,24 +922,24 @@ AString Base64Encode(const AString & a_Input)
 
 	for (size_t i = 0; i < size_full24; i += 3)
 	{
-		output[output_index++] = BASE64[(unsigned char)a_Input[i] >> 2];
-		output[output_index++] = BASE64[((unsigned char)a_Input[i] << 4 | (unsigned char)a_Input[i + 1] >> 4) & 63];
-		output[output_index++] = BASE64[((unsigned char)a_Input[i + 1] << 2 | (unsigned char)a_Input[i + 2] >> 6) & 63];
-		output[output_index++] = BASE64[(unsigned char)a_Input[i + 2] & 63];
+		output[output_index++] = BASE64[static_cast<unsigned char>(a_Input[i]) >> 2];
+		output[output_index++] = BASE64[(static_cast<unsigned char>(a_Input[i]) << 4 | static_cast<unsigned char>(a_Input[i + 1]) >> 4) & 63];
+		output[output_index++] = BASE64[(static_cast<unsigned char>(a_Input[i + 1]) << 2 | static_cast<unsigned char>(a_Input[i + 2]) >> 6) & 63];
+		output[output_index++] = BASE64[static_cast<unsigned char>(a_Input[i + 2]) & 63];
 	}
 
 	if (size_full24 < a_Input.size())
 	{
-		output[output_index++] = BASE64[(unsigned char)a_Input[size_full24] >> 2];
+		output[output_index++] = BASE64[static_cast<unsigned char>(a_Input[size_full24]) >> 2];
 		if (size_full24 + 1 == a_Input.size())
 		{
-			output[output_index++] = BASE64[((unsigned char)a_Input[size_full24] << 4) & 63];
+			output[output_index++] = BASE64[(static_cast<unsigned char>(a_Input[size_full24]) << 4) & 63];
 			output[output_index++] = '=';
 		}
 		else
 		{
-			output[output_index++] = BASE64[((unsigned char)a_Input[size_full24] << 4 | (unsigned char)a_Input[size_full24 + 1] >> 4) & 63];
-			output[output_index++] = BASE64[((unsigned char)a_Input[size_full24 + 1] << 2) & 63];
+			output[output_index++] = BASE64[(static_cast<unsigned char>(a_Input[size_full24]) << 4 | static_cast<unsigned char>(a_Input[size_full24 + 1]) >> 4) & 63];
+			output[output_index++] = BASE64[(static_cast<unsigned char>(a_Input[size_full24 + 1]) << 2) & 63];
 		}
 
 		output[output_index++] = '=';
@@ -903,8 +955,18 @@ AString Base64Encode(const AString & a_Input)
 
 short GetBEShort(const char * a_Mem)
 {
-	const Byte * Bytes = (const Byte *)a_Mem;
+	const Byte * Bytes = reinterpret_cast<const Byte *>(a_Mem);
 	return static_cast<short>((Bytes[0] << 8) | Bytes[1]);
+}
+
+
+
+
+
+unsigned short GetBEUShort(const char * a_Mem)
+{
+	const Byte * Bytes = reinterpret_cast<const Byte *>(a_Mem);
+	return static_cast<unsigned short>((Bytes[0] << 8) | Bytes[1]);
 }
 
 
@@ -913,7 +975,7 @@ short GetBEShort(const char * a_Mem)
 
 int GetBEInt(const char * a_Mem)
 {
-	const Byte * Bytes = (const Byte *)a_Mem;
+	const Byte * Bytes = reinterpret_cast<const Byte *>(a_Mem);
 	return (Bytes[0] << 24) | (Bytes[1] << 16) | (Bytes[2] << 8) | Bytes[3];
 }
 
@@ -953,7 +1015,7 @@ bool SplitZeroTerminatedStrings(const AString & a_Strings, AStringVector & a_Out
 		a_Output.push_back(a_Strings.substr(start, size - start));
 		res = true;
 	}
-	
+
 	return res;
 }
 
@@ -1004,3 +1066,23 @@ AString StringsConcat(const AStringVector & a_Strings, char a_Separator)
 
 
 
+
+bool StringToFloat(const AString & a_String, float & a_Num)
+{
+	char *err;
+	a_Num = strtof(a_String.c_str(), &err);
+	if (*err != 0)
+	{
+		return false;
+	}
+	return true;
+}
+
+
+
+
+
+bool IsOnlyWhitespace(const AString & a_String)
+{
+	return std::all_of(a_String.cbegin(), a_String.cend(), isspace);
+}

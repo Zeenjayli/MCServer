@@ -1,11 +1,5 @@
 
-// ItemThrowable.h
-
-// Declares the itemhandlers for throwable items: eggs, snowballs and ender pearls
-
-
-
-
+// Declares the itemhandlers for throwable items: eggs, snowballs, ender pearls, and eyes of ender.
 
 #pragma once
 
@@ -24,7 +18,7 @@ public:
 		m_SpeedCoeff(a_SpeedCoeff)
 	{
 	}
-	
+
 
 
 	virtual bool OnItemUse(
@@ -36,8 +30,7 @@ public:
 		Vector3d Speed = a_Player->GetLookVector() * m_SpeedCoeff;
 
 		// Play sound
-		cFastRandom Random;
-		a_World->BroadcastSoundEffect("random.bow", a_Player->GetPosX(), a_Player->GetPosY() - a_Player->GetHeight(), a_Player->GetPosZ(), 0.5f, 0.4f / (Random.NextFloat(1.0f) * 0.4f + 0.8f));
+		a_World->BroadcastSoundEffect("entity.arrow.shoot", a_Player->GetPosition() - Vector3d(0, a_Player->GetHeight(), 0), 0.5f, 0.4f / GetRandomProvider().RandReal(0.8f, 1.2f));
 
 		if (a_World->CreateProjectile(Pos.x, Pos.y, Pos.z, m_ProjectileKind, a_Player, &a_Player->GetEquippedItem(), &Speed) == cEntity::INVALID_ID)
 		{
@@ -51,7 +44,7 @@ public:
 
 		return true;
 	}
-	
+
 protected:
 	cProjectileEntity::eKind m_ProjectileKind;
 	double m_SpeedCoeff;
@@ -79,7 +72,7 @@ class cItemSnowballHandler :
 	public cItemThrowableHandler
 {
 	typedef cItemThrowableHandler super;
-	
+
 public:
 	cItemSnowballHandler(void) :
 		super(E_ITEM_SNOWBALL, cProjectileEntity::pkSnowball, 30)
@@ -95,7 +88,7 @@ class cItemEnderPearlHandler :
 	public cItemThrowableHandler
 {
 	typedef cItemThrowableHandler super;
-	
+
 public:
 	cItemEnderPearlHandler(void) :
 		super(E_ITEM_ENDER_PEARL, cProjectileEntity::pkEnderPearl, 30)
@@ -158,7 +151,3 @@ public:
 	}
 
 };
-
-
-
-

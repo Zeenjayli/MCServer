@@ -1,13 +1,10 @@
 #pragma once
 
-// The following hackery is to allow typed C++ enum for C++ code, yet have ToLua process the values.
-// ToLua doesn't understand typed enums, so we use preprocessor to hide it from ToLua.
+
+// tolua_begin
+
 
 enum ENUM_BLOCK_ID : BLOCKTYPE
-#if 0
-enum ENUM_BLOCK_ID  // tolua_export
-#endif
-// tolua_begin
 {
 	E_BLOCK_AIR = 0,
 	E_BLOCK_STONE = 1,
@@ -62,20 +59,21 @@ enum ENUM_BLOCK_ID  // tolua_export
 	E_BLOCK_TORCH = 50,
 	E_BLOCK_FIRE = 51,
 	E_BLOCK_MOB_SPAWNER = 52,
-	E_BLOCK_WOODEN_STAIRS = 53,
+	E_BLOCK_OAK_WOOD_STAIRS = 53,
 	E_BLOCK_CHEST = 54,
 	E_BLOCK_REDSTONE_WIRE = 55,
 	E_BLOCK_DIAMOND_ORE = 56,
 	E_BLOCK_DIAMOND_BLOCK = 57,
 	E_BLOCK_CRAFTING_TABLE = 58,
 	E_BLOCK_WORKBENCH = 58,
-	E_BLOCK_CROPS = 59,
+	E_BLOCK_WHEAT = 59,
+	E_BLOCK_CROPS = E_BLOCK_WHEAT,
 	E_BLOCK_FARMLAND = 60,
 	E_BLOCK_FURNACE = 61,
 	E_BLOCK_LIT_FURNACE = 62,
 	E_BLOCK_BURNING_FURNACE = 62,
 	E_BLOCK_SIGN_POST = 63,
-	E_BLOCK_WOODEN_DOOR = 64,
+	E_BLOCK_OAK_DOOR = 64,
 	E_BLOCK_LADDER = 65,
 	E_BLOCK_RAIL = 66,
 	E_BLOCK_MINECART_TRACKS = 66,
@@ -120,7 +118,7 @@ enum ENUM_BLOCK_ID  // tolua_export
 	E_BLOCK_PUMPKIN_STEM = 104,
 	E_BLOCK_MELON_STEM = 105,
 	E_BLOCK_VINES = 106,
-	E_BLOCK_FENCE_GATE = 107,
+	E_BLOCK_OAK_FENCE_GATE = 107,
 	E_BLOCK_BRICK_STAIRS = 108,
 	E_BLOCK_STONE_BRICK_STAIRS = 109,
 	E_BLOCK_MYCELIUM = 110,
@@ -162,7 +160,7 @@ enum ENUM_BLOCK_ID  // tolua_export
 	E_BLOCK_TRAPPED_CHEST = 146,
 	E_BLOCK_LIGHT_WEIGHTED_PRESSURE_PLATE = 147,
 	E_BLOCK_HEAVY_WEIGHTED_PRESSURE_PLATE = 148,
-	
+
 	E_BLOCK_INACTIVE_COMPARATOR = 149,
 	E_BLOCK_ACTIVE_COMPARATOR = 150,
 	E_BLOCK_DAYLIGHT_SENSOR = 151,
@@ -173,9 +171,10 @@ enum ENUM_BLOCK_ID  // tolua_export
 	E_BLOCK_QUARTZ_BLOCK = 155,
 	E_BLOCK_QUARTZ_STAIRS = 156,
 	E_BLOCK_ACTIVATOR_RAIL = 157,
-	
+
 	E_BLOCK_DROPPER = 158,
-	E_BLOCK_STAINED_CLAY = 159,
+	E_BLOCK_STAINED_CLAY = 159,  // Synonym to terracotta
+	E_BLOCK_TERRACOTTA = 159,  // Synonym to stained clay
 	E_BLOCK_STAINED_GLASS_PANE = 160,
 	E_BLOCK_NEW_LEAVES = 161,  // Acacia and Dark Oak IDs in Minecraft 1.7.x
 	E_BLOCK_NEW_LOG = 162,
@@ -197,8 +196,8 @@ enum ENUM_BLOCK_ID  // tolua_export
 	E_BLOCK_INVERTED_DAYLIGHT_SENSOR = 178,
 	E_BLOCK_RED_SANDSTONE = 179,
 	E_BLOCK_RED_SANDSTONE_STAIRS = 180,
-	E_BLOCK_DOUBLE_NEW_STONE_SLAB= 181,
-	E_BLOCK_NEW_STONE_SLAB = 182,
+	E_BLOCK_DOUBLE_RED_SANDSTONE_SLAB = 181,
+	E_BLOCK_RED_SANDSTONE_SLAB = 182,
 	E_BLOCK_SPRUCE_FENCE_GATE = 183,
 	E_BLOCK_BIRCH_FENCE_GATE = 184,
 	E_BLOCK_JUNGLE_FENCE_GATE = 185,
@@ -214,30 +213,89 @@ enum ENUM_BLOCK_ID  // tolua_export
 	E_BLOCK_JUNGLE_DOOR = 195,
 	E_BLOCK_ACACIA_DOOR = 196,
 	E_BLOCK_DARK_OAK_DOOR = 197,
-	
-	// Keep these two as the last values, without a number - they will get their correct number assigned automagically by C++
-	// IsValidBlock() depends on this
-	E_BLOCK_NUMBER_OF_TYPES,  ///< Number of individual (different) blocktypes
+	E_BLOCK_END_ROD = 198,
+	E_BLOCK_CHORUS_PLANT = 199,
+	E_BLOCK_CHORUS_FLOWER = 200,
+	E_BLOCK_PURPUR_BLOCK = 201,
+	E_BLOCK_PURPUR_PILLAR = 202,
+	E_BLOCK_PURPUR_STAIRS = 203,
+	E_BLOCK_PURPUR_DOUBLE_SLAB = 204,
+	E_BLOCK_PURPUR_SLAB = 205,
+	E_BLOCK_END_BRICKS = 206,
+	E_BLOCK_BEETROOTS = 207,
+	E_BLOCK_GRASS_PATH = 208,
+	E_BLOCK_END_GATEWAY = 209,
+	E_BLOCK_REPEATING_COMMAND_BLOCK = 210,
+	E_BLOCK_CHAIN_COMMAND_BLOCK = 211,
+	E_BLOCK_FROSTED_ICE = 212,
+	E_BLOCK_MAGMA = 213,
+	E_BLOCK_NETHER_WART_BLOCK = 214,
+	E_BLOCK_RED_NETHER_BRICK = 215,
+	E_BLOCK_BONE_BLOCK = 216,
+	E_BLOCK_STRUCTURE_VOID = 217,
+	E_BLOCK_OBSERVER = 218,
+	E_BLOCK_WHITE_SHULKER_BOX = 219,
+	E_BLOCK_ORANGE_SHULKER_BOX = 220,
+	E_BLOCK_MAGENTA_SHULKER_BOX = 221,
+	E_BLOCK_LIGHT_BLUE_SHULKER_BOX = 222,
+	E_BLOCK_YELLOW_SHULKER_BOX = 223,
+	E_BLOCK_LIME_SHULKER_BOX = 224,
+	E_BLOCK_PINK_SHULKER_BOX = 225,
+	E_BLOCK_GRAY_SHULKER_BOX = 226,
+	E_BLOCK_LIGHT_GRAY_SHULKER_BOX = 227,
+	E_BLOCK_CYAN_SHULKER_BOX = 228,
+	E_BLOCK_PURPLE_SHULKER_BOX = 229,
+	E_BLOCK_BLUE_SHULKER_BOX = 230,
+	E_BLOCK_BROWN_SHULKER_BOX = 231,
+	E_BLOCK_GREEN_SHULKER_BOX = 232,
+	E_BLOCK_RED_SHULKER_BOX = 233,
+	E_BLOCK_BLACK_SHULKER_BOX = 234,
+	E_BLOCK_WHITE_GLAZED_TERRACOTTA = 235,
+	E_BLOCK_ORANGE_GLAZED_TERRACOTTA = 236,
+	E_BLOCK_MAGENTA_GLAZED_TERRACOTTA = 237,
+	E_BLOCK_LIGHT_BLUE_GLAZED_TERRACOTTA = 238,
+	E_BLOCK_YELLOW_GLAZED_TERRACOTTA = 239,
+	E_BLOCK_LIME_GLAZED_TERRACOTTA = 240,
+	E_BLOCK_PINK_GLAZED_TERRACOTTA = 241,
+	E_BLOCK_GRAY_GLAZED_TERRACOTTA = 242,
+	E_BLOCK_LIGHT_GRAY_GLAZED_TERRACOTTA = 243,
+	E_BLOCK_CYAN_GLAZED_TERRACOTTA = 244,
+	E_BLOCK_PURPLE_GLAZED_TERRACOTTA = 245,
+	E_BLOCK_BLUE_GLAZED_TERRACOTTA = 246,
+	E_BLOCK_BROWN_GLAZED_TERRACOTTA = 247,
+	E_BLOCK_GREEN_GLAZED_TERRACOTTA = 248,
+	E_BLOCK_RED_GLAZED_TERRACOTTA = 249,
+	E_BLOCK_BLACK_GLAZED_TERRACOTTA = 250,
+	E_BLOCK_CONCRETE = 251,
+	E_BLOCK_CONCRETE_POWDER = 252,
+	// ...
+	E_BLOCK_STRUCTURE_BLOCK = 255,
+
+	// Keep these two as the last values. Update the last block value to the last block with an id less than 255 when adding another block
+	// IsValidBlock() depends on this (255 gets checked additionally because there is a gap. See https://minecraft.gamepedia.com/Data_values#Block_IDs
+	E_BLOCK_NUMBER_OF_TYPES = E_BLOCK_CONCRETE_POWDER + 1,  ///< Number of individual (different) blocktypes
 	E_BLOCK_MAX_TYPE_ID = E_BLOCK_NUMBER_OF_TYPES - 1,  ///< Maximum BlockType number used
-	
+
+	E_BLOCK_UNFINISHED = 254,  // Special type used as a placeholder, signifying that the block lacks implementation
+
 	// Synonym or ID compatibility
 	E_BLOCK_YELLOW_FLOWER = E_BLOCK_DANDELION,
 	E_BLOCK_RED_ROSE = E_BLOCK_FLOWER,
-	E_BLOCK_LOCKED_CHEST = E_BLOCK_STAINED_GLASS,
+	E_BLOCK_WOODEN_DOOR = E_BLOCK_OAK_DOOR,
+	E_BLOCK_FENCE_GATE = E_BLOCK_OAK_FENCE_GATE,
+	E_BLOCK_WOODEN_STAIRS = E_BLOCK_OAK_WOOD_STAIRS,
 };
-// tolua_end
 
 
 
 
 
-// tolua_begin
-enum ENUM_ITEM_ID
+enum ENUM_ITEM_ID : short
 {
 	E_ITEM_EMPTY = -1,
 
 	E_ITEM_FIRST = 256,  // First true item type
-	
+
 	E_ITEM_IRON_SHOVEL = 256,
 	E_ITEM_IRON_PICKAXE = 257,
 	E_ITEM_IRON_AXE = 258,
@@ -405,17 +463,39 @@ enum ENUM_ITEM_ID
 	E_ITEM_GOLD_HORSE_ARMOR = 418,
 	E_ITEM_DIAMOND_HORSE_ARMOR = 419,
 	E_ITEM_LEAD = 420,
+	E_ITEM_LEASH = E_ITEM_LEAD,
 	E_ITEM_NAME_TAG = 421,
 	E_ITEM_MINECART_WITH_COMMAND_BLOCK = 422,
 	E_ITEM_RAW_MUTTON = 423,
 	E_ITEM_COOKED_MUTTON = 424,
 	E_ITEM_BANNER = 425,
+	E_ITEM_END_CRYSTAL = 426,
 	E_ITEM_SPRUCE_DOOR = 427,
 	E_ITEM_BIRCH_DOOR = 428,
 	E_ITEM_JUNGLE_DOOR = 429,
 	E_ITEM_ACACIA_DOOR = 430,
 	E_ITEM_DARK_OAK_DOOR = 431,
-	
+	E_ITEM_CHORUS_FRUIT = 432,
+	E_ITEM_POPPED_CHORUS_FRUIT = 433,
+	E_ITEM_BEETROOT = 434,
+	E_ITEM_BEETROOT_SEEDS = 435,
+	E_ITEM_BEETROOT_SOUP = 436,
+	E_ITEM_DRAGON_BREATH = 437,
+	E_ITEM_SPLASH_POTION = 438,
+	E_ITEM_SPECTRAL_ARROW = 439,
+	E_ITEM_TIPPED_ARROW = 440,
+	E_ITEM_LINGERING_POTION = 441,
+	E_ITEM_SHIELD = 442,
+	E_ITEM_ELYTRA = 443,
+	E_ITEM_SPRUCE_BOAT = 444,
+	E_ITEM_BIRCH_BOAT = 445,
+	E_ITEM_JUNGLE_BOAT = 446,
+	E_ITEM_ACACIA_BOAT = 447,
+	E_ITEM_DARK_OAK_BOAT = 448,
+	E_ITEM_TOTEM_OF_UNDYING = 449,
+	E_ITEM_SHULKER_SHELL = 450,
+	E_ITEM_IRON_NUGGET = 452,
+
 	// Keep these two as the last values of the consecutive list, without a number - they will get their correct number assigned automagically by C++
 	// IsValidItem() depends on this!
 	E_ITEM_NUMBER_OF_CONSECUTIVE_TYPES,  ///< Number of individual (different) consecutive itemtypes
@@ -434,12 +514,12 @@ enum ENUM_ITEM_ID
 	E_ITEM_WARD_DISC = 2265,
 	E_ITEM_11_DISC = 2266,
 	E_ITEM_WAIT_DISC = 2267,
-	
+
 	// Keep these two as the last values of the disc list, without a number - they will get their correct number assigned automagically by C++
 	// IsValidItem() depends on this!
 	E_ITEM_LAST_DISC_PLUS_ONE,  ///< Useless, really, but needs to be present for the following value
 	E_ITEM_LAST_DISC = E_ITEM_LAST_DISC_PLUS_ONE - 1,  ///< Maximum disc itemtype number used
-	
+
 	E_ITEM_LAST = E_ITEM_LAST_DISC,  ///< Maximum valid ItemType
 };
 
@@ -447,11 +527,11 @@ enum ENUM_ITEM_ID
 
 
 
-enum
+enum ENUM_BLOCK_META : NIBBLETYPE
 {
-	// Please keep this list alpha-sorted by the blocktype / itemtype part
-	// then number-sorted for the same block / item
-	
+	// Please keep this list alpha-sorted by the blocktype part
+	// then number-sorted for the same block
+
 	////////////////////////////////////////////////////////////////////////////////
 	// Block metas:
 
@@ -477,6 +557,8 @@ enum
 	E_META_BIG_FLOWER_LARGE_FERN        = 3,
 	E_META_BIG_FLOWER_ROSE_BUSH         = 4,
 	E_META_BIG_FLOWER_PEONY             = 5,
+	// 0x8 is supposedly a bit flag but all vanilla plants have this value
+	E_META_BIG_FLOWER_TOP               = 10,
 
 	// E_BLOCK_BREWING_STAND metas
 	E_META_BREWING_STAND_FILLED_SLOT_XP    = 1,
@@ -509,19 +591,55 @@ enum
 	E_META_CARPET_GREEN      = 13,
 	E_META_CARPET_RED        = 14,
 	E_META_CARPET_BLACK      = 15,
-	
+
 	// E_BLOCK_CHEST metas:
 	E_META_CHEST_FACING_ZM = 2,
 	E_META_CHEST_FACING_ZP = 3,
 	E_META_CHEST_FACING_XM = 4,
 	E_META_CHEST_FACING_XP = 5,
-	
+
+	// E_BLOCK_CONCRETE metas:
+	E_META_CONCRETE_WHITE      = 0,
+	E_META_CONCRETE_ORANGE     = 1,
+	E_META_CONCRETE_MAGENTA    = 2,
+	E_META_CONCRETE_LIGHTBLUE  = 3,
+	E_META_CONCRETE_YELLOW     = 4,
+	E_META_CONCRETE_LIGHTGREEN = 5,
+	E_META_CONCRETE_PINK       = 6,
+	E_META_CONCRETE_GRAY       = 7,
+	E_META_CONCRETE_LIGHTGRAY  = 8,
+	E_META_CONCRETE_CYAN       = 9,
+	E_META_CONCRETE_PURPLE     = 10,
+	E_META_CONCRETE_BLUE       = 11,
+	E_META_CONCRETE_BROWN      = 12,
+	E_META_CONCRETE_GREEN      = 13,
+	E_META_CONCRETE_RED        = 14,
+	E_META_CONCRETE_BLACK      = 15,
+
+	// E_BLOCK_CONCRETE_POWDER metas:
+	E_META_CONCRETE_POWDER_WHITE      = 0,
+	E_META_CONCRETE_POWDER_ORANGE     = 1,
+	E_META_CONCRETE_POWDER_MAGENTA    = 2,
+	E_META_CONCRETE_POWDER_LIGHTBLUE  = 3,
+	E_META_CONCRETE_POWDER_YELLOW     = 4,
+	E_META_CONCRETE_POWDER_LIGHTGREEN = 5,
+	E_META_CONCRETE_POWDER_PINK       = 6,
+	E_META_CONCRETE_POWDER_GRAY       = 7,
+	E_META_CONCRETE_POWDER_LIGHTGRAY  = 8,
+	E_META_CONCRETE_POWDER_CYAN       = 9,
+	E_META_CONCRETE_POWDER_PURPLE     = 10,
+	E_META_CONCRETE_POWDER_BLUE       = 11,
+	E_META_CONCRETE_POWDER_BROWN      = 12,
+	E_META_CONCRETE_POWDER_GREEN      = 13,
+	E_META_CONCRETE_POWDER_RED        = 14,
+	E_META_CONCRETE_POWDER_BLACK      = 15,
+
 	// E_BLOCK_DIRT metas:
 	E_META_DIRT_NORMAL    = 0,
 	E_META_DIRT_GRASSLESS = 1,
 	E_META_DIRT_COARSE    = 1,
 	E_META_DIRT_PODZOL    = 2,
-	
+
 	// E_BLOCK_DISPENSER / E_BLOCK_DROPPER metas:
 	E_META_DROPSPENSER_FACING_YM = 0,
 	E_META_DROPSPENSER_FACING_YP = 1,
@@ -529,6 +647,8 @@ enum
 	E_META_DROPSPENSER_FACING_ZP = 3,
 	E_META_DROPSPENSER_FACING_XM = 4,
 	E_META_DROPSPENSER_FACING_XP = 5,
+	E_META_DROPSPENSER_FACING_MASK = 7,
+	E_META_DROPSPENSER_ACTIVATED = 8,
 
 	// E_BLOCK_DOUBLE_STONE_SLAB metas:
 	E_META_DOUBLE_STONE_SLAB_STONE            = 0,
@@ -542,7 +662,19 @@ enum
 	E_META_DOUBLE_STONE_SLAB_SMOOTH_STONE     = 8,
 	E_META_DOUBLE_STONE_SLAB_SMOOTH_SANDSTONE = 9,
 	E_META_DOUBLE_STONE_SLAB_TILE_QUARTZ      = 10,
-	
+
+	// E_BLOCK_END_PORTAL_FRAME metas:
+	E_META_END_PORTAL_FRAME_ZP     = 0,  // Faces towards centre of portal
+	E_META_END_PORTAL_FRAME_XM     = 1,
+	E_META_END_PORTAL_FRAME_ZM     = 2,
+	E_META_END_PORTAL_FRAME_XP     = 3,
+	E_META_END_PORTAL_FRAME_ZP_EYE = 4,  // Frames with ender eye
+	E_META_END_PORTAL_FRAME_XM_EYE = 5,
+	E_META_END_PORTAL_FRAME_ZM_EYE = 6,
+	E_META_END_PORTAL_FRAME_XP_EYE = 7,
+	E_META_END_PORTAL_FRAME_NO_EYE = 0,  // Just the eye bitflag
+	E_META_END_PORTAL_FRAME_EYE    = 4,
+
 	// E_BLOCK_FLOWER metas:
 	E_META_FLOWER_POPPY           = 0,
 	E_META_FLOWER_BLUE_ORCHID     = 1,
@@ -552,11 +684,11 @@ enum
 	E_META_FLOWER_WHITE_TULIP     = 6,
 	E_META_FLOWER_PINK_TULIP      = 7,
 	E_META_FLOWER_OXEYE_DAISY     = 8,
-	
+
 	// E_BLOCK_JUKEBOX metas:
 	E_META_JUKEBOX_OFF = 0,
 	E_META_JUKEBOX_ON  = 1,
-	
+
 	// E_BLOCK_HOPPER metas:
 	E_META_HOPPER_FACING_YM  = 0,
 	E_META_HOPPER_UNATTACHED = 1,  // Hopper doesn't move items up, there's no YP
@@ -586,21 +718,17 @@ enum
 	E_META_NEWLEAVES_DARK_OAK_NO_DECAY    = 5,
 	E_META_NEWLEAVES_ACACIA_CHECK_DECAY   = 8,
 	E_META_NEWLEAVES_DARK_OAK_CHECK_DECAY = 9,
-	
+
 	// E_BLOCK_LOG metas:
 	E_META_LOG_APPLE   = 0,
 	E_META_LOG_CONIFER = 1,
 	E_META_LOG_BIRCH   = 2,
 	E_META_LOG_JUNGLE  = 3,
-	
-	// E_BLOCK_NEW_LEAVES metas:
-	E_META_NEW_LEAVES_ACACIA_WOOD   = 0,
-	E_META_NEW_LEAVES_DARK_OAK_WOOD = 1,
-	
+
 	// E_BLOCK_NEW_LOG metas:
 	E_META_NEW_LOG_ACACIA_WOOD   = 0,
 	E_META_NEW_LOG_DARK_OAK_WOOD = 1,
-	
+
 	// E_BLOCK_PISTON metas:
 	E_META_PISTON_DOWN        = 0,
 	E_META_PISTON_U           = 1,
@@ -612,8 +740,8 @@ enum
 	E_META_PISTON_EXTENDED    = 8,
 
 	// E_BLOCK_PLANKS metas:
-	E_META_PLANKS_APPLE    = 0,
-	E_META_PLANKS_CONIFER  = 1,
+	E_META_PLANKS_OAK      = 0,
+	E_META_PLANKS_SPRUCE   = 1,
 	E_META_PLANKS_BIRCH    = 2,
 	E_META_PLANKS_JUNGLE   = 3,
 	E_META_PLANKS_ACACIA   = 4,
@@ -622,12 +750,12 @@ enum
 	// E_BLOCK_(XXX_WEIGHTED)_PRESSURE_PLATE metas:
 	E_META_PRESSURE_PLATE_RAISED    = 0,
 	E_META_PRESSURE_PLATE_DEPRESSED = 1,
-	
+
 	// E_BLOCK_PRISMARINE_BLOCK metas:
 	E_META_PRISMARINE_BLOCK_ROUGH  = 0,
 	E_META_PRISMARINE_BLOCK_BRICKS = 1,
 	E_META_PRISMARINE_BLOCK_DARK   = 2,
-	
+
 	// E_BLOCK_QUARTZ_BLOCK metas:
 	E_META_QUARTZ_NORMAL    = 0,
 	E_META_QUARTZ_CHISELLED = 1,
@@ -644,21 +772,21 @@ enum
 	E_META_RAIL_CURVED_ZP_XM = 7,
 	E_META_RAIL_CURVED_ZM_XM = 8,
 	E_META_RAIL_CURVED_ZM_XP = 9,
-	
+
 	// E_BLOCK_RED_SANDSTONE metas:
 	E_META_RED_SANDSTONE_NORMAL   = 0,
 	E_META_RED_SANDSTONE_ORNAMENT = 1,
 	E_META_RED_SANDSTONE_SMOOTH   = 2,
-	
+
 	// E_BLOCK_SAND metas:
 	E_META_SAND_NORMAL = 0,
 	E_META_SAND_RED    = 1,
-	
+
 	// E_BLOCK_SANDSTONE metas:
 	E_META_SANDSTONE_NORMAL   = 0,
 	E_META_SANDSTONE_ORNAMENT = 1,
 	E_META_SANDSTONE_SMOOTH   = 2,
-	
+
 	// E_BLOCK_SAPLING metas (lowest 3 bits):
 	E_META_SAPLING_APPLE    = 0,
 	E_META_SAPLING_CONIFER  = 1,
@@ -666,12 +794,12 @@ enum
 	E_META_SAPLING_JUNGLE   = 3,
 	E_META_SAPLING_ACACIA   = 4,
 	E_META_SAPLING_DARK_OAK = 5,
-	
+
 	// E_BLOCK_SILVERFISH_EGG metas:
 	E_META_SILVERFISH_EGG_STONE       = 0,
 	E_META_SILVERFISH_EGG_COBBLESTONE = 1,
 	E_META_SILVERFISH_EGG_STONE_BRICK = 2,
-	
+
 	// E_BLOCK_SNOW metas:
 	E_META_SNOW_LAYER_ONE          = 0,
 	E_META_SNOW_LAYER_TWO          = 1,
@@ -681,6 +809,10 @@ enum
 	E_META_SNOW_LAYER_SIX          = 5,
 	E_META_SNOW_LAYER_SEVEN        = 6,
 	E_META_SNOW_LAYER_EIGHT        = 7,
+
+	// E_BLOCK_SPONGE metas:
+	E_META_SPONGE_DRY              = 0,
+	E_META_SPONGE_WET              = 1,
 
 	// E_BLOCK_STAINED_CLAY metas:
 	E_META_STAINED_CLAY_WHITE      = 0,
@@ -699,7 +831,7 @@ enum
 	E_META_STAINED_CLAY_GREEN      = 13,
 	E_META_STAINED_CLAY_RED        = 14,
 	E_META_STAINED_CLAY_BLACK      = 15,
-	
+
 	// E_BLOCK_STAINED_GLASS metas:
 	E_META_STAINED_GLASS_WHITE      = 0,
 	E_META_STAINED_GLASS_ORANGE     = 1,
@@ -717,7 +849,7 @@ enum
 	E_META_STAINED_GLASS_GREEN      = 13,
 	E_META_STAINED_GLASS_RED        = 14,
 	E_META_STAINED_GLASS_BLACK      = 15,
-	
+
 	// E_BLOCK_STAINED_GLASS_PANE metas:
 	E_META_STAINED_GLASS_PANE_WHITE      = 0,
 	E_META_STAINED_GLASS_PANE_ORANGE     = 1,
@@ -761,19 +893,19 @@ enum
 	E_META_STONE_SLAB_STONE_BRICK  = 5,
 	E_META_STONE_SLAB_NETHER_BRICK = 6,
 	E_META_STONE_SLAB_QUARTZ       = 7,
-	
+
 	// E_BLOCK_STONE_BRICKS metas:
 	E_META_STONE_BRICK_NORMAL   = 0,
 	E_META_STONE_BRICK_MOSSY    = 1,
 	E_META_STONE_BRICK_CRACKED  = 2,
 	E_META_STONE_BRICK_ORNAMENT = 3,
-	
+
 	// E_BLOCK_TALL_GRASS metas:
 	E_META_TALL_GRASS_DEAD_SHRUB = 0,
 	E_META_TALL_GRASS_GRASS      = 1,
 	E_META_TALL_GRASS_FERN       = 2,
 	E_META_TALL_GRASS_BIOME      = 3,
-	
+
 	// E_BLOCK_TORCH, E_BLOCK_REDSTONE_TORCH_OFF, E_BLOCK_REDSTONE_TORCH_ON metas:
 	E_META_TORCH_EAST  = 1,  // east face of the block, pointing east
 	E_META_TORCH_WEST  = 2,
@@ -814,16 +946,16 @@ enum
 	E_META_NEWLOG_DARK_OAK_BARK_ONLY = 13,
 
 	// E_BLOCK_WOODEN_DOUBLE_SLAB metas:
-	E_META_WOODEN_DOUBLE_SLAB_APPLE    = 0,
-	E_META_WOODEN_DOUBLE_SLAB_CONIFER  = 1,
+	E_META_WOODEN_DOUBLE_SLAB_OAK      = 0,
+	E_META_WOODEN_DOUBLE_SLAB_SPRUCE   = 1,
 	E_META_WOODEN_DOUBLE_SLAB_BIRCH    = 2,
 	E_META_WOODEN_DOUBLE_SLAB_JUNGLE   = 3,
 	E_META_WOODEN_DOUBLE_SLAB_ACACIA   = 4,
 	E_META_WOODEN_DOUBLE_SLAB_DARK_OAK = 5,
-	
+
 	// E_BLOCK_WOODEN_SLAB metas:
-	E_META_WOODEN_SLAB_APPLE         = 0,
-	E_META_WOODEN_SLAB_CONIFER       = 1,
+	E_META_WOODEN_SLAB_OAK           = 0,
+	E_META_WOODEN_SLAB_SPRUCE        = 1,
 	E_META_WOODEN_SLAB_BIRCH         = 2,
 	E_META_WOODEN_SLAB_JUNGLE        = 3,
 	E_META_WOODEN_SLAB_ACACIA        = 4,
@@ -847,10 +979,20 @@ enum
 	E_META_WOOL_GREEN      = 13,
 	E_META_WOOL_RED        = 14,
 	E_META_WOOL_BLACK      = 15,
-	
+};
+
+
+
+
+
+enum ENUM_ITEM_META : short
+{
+	// Please keep this list alpha-sorted by the itemtype part
+	// then number-sorted for the same item
+
 	////////////////////////////////////////////////////////////////////////////////
 	// Item metas:
-	
+
 	// E_ITEM_BANNER metas:
 	E_META_BANNER_BLACK      = 0,
 	E_META_BANNER_RED        = 1,
@@ -868,11 +1010,11 @@ enum
 	E_META_BANNER_MAGENTA    = 13,
 	E_META_BANNER_ORANGE     = 14,
 	E_META_BANNER_WHITE      = 15,
-	
+
 	// E_ITEM_COAL metas:
 	E_META_COAL_NORMAL    = 0,
 	E_META_COAL_CHARCOAL  = 1,
-	
+
 	// E_ITEM_DYE metas:
 	E_META_DYE_BLACK      = 0,
 	E_META_DYE_RED        = 1,
@@ -894,20 +1036,21 @@ enum
 	// E_ITEM_GOLDEN_APPLE metas:
 	E_META_GOLDEN_APPLE_NORMAL = 0,
 	E_META_GOLDEN_APPLE_ENCHANTED = 1,
-	
+
 	// E_ITEM_HEAD metas:
 	E_META_HEAD_SKELETON = 0,
 	E_META_HEAD_WITHER   = 1,
 	E_META_HEAD_ZOMBIE   = 2,
 	E_META_HEAD_PLAYER   = 3,
 	E_META_HEAD_CREEPER  = 4,
-	
+	E_META_HEAD_DRAGON   = 5,
+
 	// E_ITEM_RAW_FISH metas:
 	E_META_RAW_FISH_FISH       = 0,
 	E_META_RAW_FISH_SALMON     = 1,
 	E_META_RAW_FISH_CLOWNFISH  = 2,
 	E_META_RAW_FISH_PUFFERFISH = 3,
-	
+
 	// E_ITEM_COOKED_FISH metas:
 	E_META_COOKED_FISH_FISH       = 0,
 	E_META_COOKED_FISH_SALMON     = 1,
@@ -915,7 +1058,7 @@ enum
 	// E_ITEM_MINECART_TRACKS metas:
 	E_META_TRACKS_X = 1,
 	E_META_TRACKS_Z = 0,
-		
+
 	// E_ITEM_SPAWN_EGG metas:
 	// See also cMonster::eType, since monster type and spawn egg meta are the same
 	E_META_SPAWN_EGG_PICKUP           = 1,
@@ -980,7 +1123,7 @@ enum
 
 
 
-/// Dimension of a world
+/** Dimension of a world */
 enum eDimension
 {
 	dimNether    = -1,
@@ -993,7 +1136,7 @@ enum eDimension
 
 
 
-/// Damage type, used in the TakeDamageInfo structure and related functions
+/** Damage type, used in the TakeDamageInfo structure and related functions */
 enum eDamageType
 {
 	// Canonical names for the types (as documented in the plugin wiki):
@@ -1015,7 +1158,7 @@ enum eDamageType
 	dtEnderPearl,       // Thrown an ender pearl, teleported by it
 	dtAdmin,            // Damage applied by an admin command
 	dtExplosion,        // Damage applied by an explosion
-	
+
 	// Some common synonyms:
 	dtPawnAttack   = dtAttack,
 	dtEntityAttack = dtAttack,
@@ -1044,18 +1187,30 @@ enum eDamageType
 
 
 
+/** The source of an explosion.
+Also dictates the type of the additional data passed to the explosion handlers:
+| esBed           | Vector3i *             | Bed exploding in the Nether or in the End
+| esEnderCrystal  | cEnderCrystal *        |
+| esGhastFireball | cGhastFireballEntity * |
+| esMonster       | cMonster *             |
+| esOther         | nullptr                | Any other explosion unaccounted for
+| esPlugin        | nullptr                | Explosion primarily attributed to a plugin
+| esPrimedTNT     | cTNTEntity *           |
+| esWitherBirth   | cMonster *             |
+| esWitherSkull   | cProjectileEntity *    |
+*/
 enum eExplosionSource
 {
-	esOther,
-	esPrimedTNT,
-	esMonster,
 	esBed,
 	esEnderCrystal,
 	esGhastFireball,
-	esWitherSkullBlack,
-	esWitherSkullBlue,
-	esWitherBirth,
+	esMonster,
+	esOther,
 	esPlugin,
+	esPrimedTNT,
+	esWitherBirth,
+	esWitherSkull,
+	esMax,
 } ;
 
 
@@ -1097,41 +1252,68 @@ class cIniFile;
 
 // tolua_begin
 
-/// Translates a blocktype string into blocktype. Takes either a number or an items.ini alias as input. Returns -1 on failure.
+/** Translates a blocktype string into blocktype. Takes either a number or an items.ini alias as input. Returns -1 on failure. */
 extern int BlockStringToType(const AString & a_BlockTypeString);
 
-/// Translates an itemtype string into an item. Takes either a number, number^number, number:number or an items.ini alias as input. Returns true if successful.
+/** Translates an itemtype string into an item. Takes either a number, number^number, number:number or an items.ini alias as input. Returns true if successful. */
 extern bool StringToItem(const AString & a_ItemTypeString, cItem & a_Item);
 
-/// Translates a full item into a string. If the ItemType is not recognized, the ItemType number is output into the string.
+/** Translates a full item into a string. If the ItemType is not recognized, the ItemType number is output into the string. */
 extern AString ItemToString(const cItem & a_Item);
 
-/// Translates itemtype into a string. If the type is not recognized, the itemtype number is output into the string.
+/** Translates itemtype into a string. If the type is not recognized, the itemtype number is output into the string. */
 extern AString ItemTypeToString(short a_ItemType);
 
-/// Translates a full item into a fully-specified string (including meta and count). If the ItemType is not recognized, the ItemType number is output into the string.
+/** Translates a full item into a fully-specified string (including meta and count). If the ItemType is not recognized, the ItemType number is output into the string. */
 extern AString ItemToFullString(const cItem & a_Item);
 
-/// Translates a dimension string to dimension enum. Takes either a number or a dimension alias (built-in). Returns dimOverworld on failure
+/** Translates a dimension string to dimension enum. Takes either a number or a dimension alias (built-in). Returns dimOverworld on failure */
 extern eDimension StringToDimension(const AString & a_DimensionString);
 
 /** Translates a dimension enum to dimension string.
-Takes an eDimension enum value and returns "Overworld" on failure
-*/
+Takes an eDimension enum value and returns "Overworld" on failure. */
 extern AString DimensionToString(eDimension a_Dimension);
 
-/// Translates damage type constant to a string representation (built-in).
+/** Translates damage type constant to a string representation (built-in). */
 extern AString DamageTypeToString(eDamageType a_DamageType);
 
-/// Translates a damage type string to damage type. Takes either a number or a damage type alias (built-in). Returns -1 on failure
+/** Translates a damage type string to damage type. Takes either a number or a damage type alias (built-in). Returns -1 on failure */
 extern eDamageType StringToDamageType(const AString & a_DamageString);
 
-/// Returns a cItem representing the item described in an IniFile's value; if the value doesn't exist, creates it with the provided default.
+/** Returns a cItem representing the item described in an IniFile's value; if the value doesn't exist, creates it with the provided default. */
 extern cItem GetIniItemSet(cIniFile & a_IniFile, const char * a_Section, const char * a_Key, const char * a_Default);
 
 // tolua_end
 
 
+
+
+
+/** Base case for IsOneOf to handle empty template aguments. */
+template <class = void>
+bool IsOneOf(BLOCKTYPE a_BlockType)
+{
+	return false;
+}
+
+
+/** Returns true if a_BlockType is equal to any of the variadic template arguments.
+Some example usage:
+\code
+	IsOneOf<>(E_BLOCK_AIR)                           == false
+	IsOneOf<E_BLOCK_AIR>(E_BLOCK_DIRT)               == false
+	IsOneOf<E_BLOCK_AIR, E_BLOCK_DIRT>(E_BLOCK_DIRT) == true
+\endcode
+The implementation is ugly but it is equivalent to this C++17 fold expression:
+\code
+	((a_BlockType == Types) || ...)
+\endcode
+Just written to be valid without fold expressions or SFINAE. */
+template <BLOCKTYPE Head, BLOCKTYPE ... Tail>
+bool IsOneOf(BLOCKTYPE a_BlockType)
+{
+	return ((a_BlockType == Head) || (IsOneOf<Tail...>(a_BlockType)));
+}
 
 
 

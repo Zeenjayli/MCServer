@@ -1,9 +1,4 @@
 
-cmake_minimum_required (VERSION 2.6)
-project (MCServer)
-
-include_directories ("${PROJECT_SOURCE_DIR}/../")
-
 SET (SRCS
 	AggressiveMonster.cpp
 	Bat.cpp
@@ -22,9 +17,11 @@ SET (SRCS
 	MagmaCube.cpp
 	Monster.cpp
 	Mooshroom.cpp
+	Ocelot.cpp
 	PassiveAggressiveMonster.cpp
 	PassiveMonster.cpp
 	Path.cpp
+	PathFinder.cpp
 	Pig.cpp
 	Rabbit.cpp
 	Sheep.cpp
@@ -39,7 +36,7 @@ SET (SRCS
 	Wolf.cpp
 	Zombie.cpp
 	ZombiePigman.cpp)
-	
+
 SET (HDRS
 	AggressiveMonster.h
 	Bat.h
@@ -64,6 +61,7 @@ SET (HDRS
 	PassiveAggressiveMonster.h
 	PassiveMonster.h
 	Path.h
+	PathFinder.h
 	Pig.h
 	Rabbit.h
 	Sheep.h
@@ -82,4 +80,5 @@ SET (HDRS
 
 if(NOT MSVC)
 	add_library(Mobs ${SRCS} ${HDRS})
+	target_link_libraries(Mobs fmt::fmt)
 endif()

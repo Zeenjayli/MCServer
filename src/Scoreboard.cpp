@@ -30,13 +30,8 @@ AString cObjective::TypeToString(eType a_Type)
 		case otStatBlockMine:      return "stat.mineBlock";
 		case otStatEntityKill:     return "stat.killEntity";
 		case otStatEntityKilledBy: return "stat.entityKilledBy";
-		
-		// clang optimisises this line away then warns that it has done so.
-		#if !defined(__clang__)
-		default: return "";
-		#endif
 	}
-	
+	UNREACHABLE("Unsupported objective type");
 }
 
 
@@ -254,6 +249,7 @@ void cTeam::Reset(void)
 
 
 
+
 void cTeam::SetDisplayName(const AString & a_Name)
 {
 	m_DisplayName = a_Name;
@@ -276,7 +272,7 @@ size_t cTeam::GetNumPlayers(void) const
 
 cScoreboard::cScoreboard(cWorld * a_World) : m_World(a_World)
 {
-	for (int i = 0; i < (int) dsCount; ++i)
+	for (int i = 0; i < static_cast<int>(dsCount); ++i)
 	{
 		m_Display[i] = nullptr;
 	}
@@ -323,11 +319,11 @@ bool cScoreboard::RemoveObjective(const AString & a_Name)
 	ASSERT(m_World != nullptr);
 	m_World->BroadcastScoreboardObjective(it->second.GetName(), it->second.GetDisplayName(), 1);
 
-	for (unsigned int i = 0; i < (unsigned int) dsCount; ++i)
+	for (unsigned int i = 0; i < static_cast<unsigned int>(dsCount); ++i)
 	{
 		if (m_Display[i] == &it->second)
 		{
-			SetDisplay(nullptr, (eDisplaySlot) i);
+			SetDisplay(nullptr, static_cast<eDisplaySlot>(i));
 		}
 	}
 
@@ -416,6 +412,22 @@ cTeam * cScoreboard::GetTeam(const AString & a_Name)
 
 
 
+AStringVector cScoreboard::GetTeamNames()
+{
+	AStringVector TeamNames;
+
+	for (const auto & Team: m_Teams)
+	{
+		TeamNames.push_back(Team.first);
+	}
+
+	return TeamNames;
+}
+
+
+
+
+
 cTeam * cScoreboard::QueryPlayerTeam(const AString & a_Name)
 {
 	cCSLock Lock(m_CSTeams);
@@ -471,7 +483,7 @@ cObjective * cScoreboard::GetObjectiveIn(eDisplaySlot a_Slot)
 
 
 
-bool cScoreboard::ForEachObjectiveWith(cObjective::eType a_Type, cObjectiveCallback & a_Callback)
+bool cScoreboard::ForEachObjectiveWith(cObjective::eType a_Type, cObjectiveCallback a_Callback)
 {
 	cCSLock Lock(m_CSObjectives);
 
@@ -480,7 +492,7 @@ bool cScoreboard::ForEachObjectiveWith(cObjective::eType a_Type, cObjectiveCallb
 		if (it->second.GetType() == a_Type)
 		{
 			// Call callback
-			if (a_Callback.Item(&it->second))
+			if (a_Callback(it->second))
 			{
 				return false;
 			}
@@ -493,14 +505,14 @@ bool cScoreboard::ForEachObjectiveWith(cObjective::eType a_Type, cObjectiveCallb
 
 
 
-bool cScoreboard::ForEachObjective(cObjectiveCallback & a_Callback)
+bool cScoreboard::ForEachObjective(cObjectiveCallback a_Callback)
 {
 	cCSLock Lock(m_CSObjectives);
 
 	for (cObjectiveMap::iterator it = m_Objectives.begin(); it != m_Objectives.end(); ++it)
 	{
 		// Call callback
-		if (a_Callback.Item(&it->second))
+		if (a_Callback(it->second))
 		{
 			return false;
 		}
@@ -512,14 +524,14 @@ bool cScoreboard::ForEachObjective(cObjectiveCallback & a_Callback)
 
 
 
-bool cScoreboard::ForEachTeam(cTeamCallback & a_Callback)
+bool cScoreboard::ForEachTeam(cTeamCallback a_Callback)
 {
 	cCSLock Lock(m_CSTeams);
 
 	for (cTeamMap::iterator it = m_Teams.begin(); it != m_Teams.end(); ++it)
 	{
 		// Call callback
-		if (a_Callback.Item(&it->second))
+		if (a_Callback(it->second))
 		{
 			return false;
 		}
@@ -557,14 +569,14 @@ void cScoreboard::SendTo(cClientHandle & a_Client)
 		it->second.SendTo(a_Client);
 	}
 
-	for (int i = 0; i < (int) dsCount; ++i)
+	for (int i = 0; i < static_cast<int>(dsCount); ++i)
 	{
 		// Avoid race conditions
 		cObjective * Objective = m_Display[i];
 
 		if (Objective)
 		{
-			a_Client.SendDisplayObjective(Objective->GetName(), (eDisplaySlot) i);
+			a_Client.SendDisplayObjective(Objective->GetName(), static_cast<eDisplaySlot>(i));
 		}
 	}
 }

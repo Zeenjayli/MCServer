@@ -29,9 +29,8 @@ by using templates.
 
 #pragma once
 
-#include "../BiomeDef.h"
-
 #include <tuple>
+#include "../Noise/Noise.h"
 
 
 
@@ -67,10 +66,10 @@ public:
 
 	/** Generates the array of templated size into a_Values, based on given min coords. */
 	virtual void GetInts(int a_MinX, int a_MinZ, Values & a_Values) = 0;
-	
+
 };
 
-// Code adapted from http://stackoverflow.com/questions/7858817/unpacking-a-tuple-to-call-a-matching-function-pointer
+// Code adapted from https://stackoverflow.com/questions/7858817/unpacking-a-tuple-to-call-a-matching-function-pointer
 
 template<int... >
 struct sSeq
@@ -92,7 +91,7 @@ struct sGens<0, S...>
 template<class Gen, class... Args>
 class cIntGenFactory
 {
-	
+
 public:
 
 	typedef Gen Generator;
@@ -101,7 +100,7 @@ public:
 		m_args(std::make_tuple<Args...>(std::forward<Args>(a_args)...))
 	{
 	}
-	
+
 	template <class LhsGen>
 	std::shared_ptr<Gen> construct(LhsGen&& a_Lhs)
 	{
@@ -111,13 +110,13 @@ public:
 
 private:
 	std::tuple<Args...> m_args;
-	
+
 	template <class LhsGen, int... S>
 	std::shared_ptr<Gen> construct_impl(LhsGen&& a_Lhs, sSeq<S...>)
 	{
 		return std::make_shared<Gen>(std::get<S>(m_args)..., std::forward<LhsGen>(a_Lhs));
 	}
-	
+
 };
 
 template<class T, class RhsGen, class... Args>
@@ -175,7 +174,6 @@ protected:
 
 
 
-
 /** Generates a 2D array of random integers in the specified range [0 .. Range). */
 template <int Range, int SizeX, int SizeZ = SizeX>
 class cIntGenChoice :
@@ -202,7 +200,6 @@ public:
 		}  // for z
 	}
 };
-
 
 
 
@@ -754,7 +751,7 @@ public:
 			int IdxZ = z * SizeX;
 			for (int x = 0; x < SizeX; x++)
 			{
-				size_t val = (size_t)a_Values[x + IdxZ];
+				size_t val = static_cast<size_t>(a_Values[x + IdxZ]);
 				const cBiomesInGroups & Biomes = (val > bgfRare) ?
 					rareBiomesInGroups[(val & (bgfRare - 1)) % ARRAYCOUNT(rareBiomesInGroups)] :
 					biomesInGroups[val % ARRAYCOUNT(biomesInGroups)];
@@ -891,7 +888,7 @@ public:
 				}
 
 				// There's a river, change the output to a river or a frozen river, based on the original biome:
-				if (IsBiomeVeryCold((EMCSBiome)a_Values[idx]))
+				if (IsBiomeVeryCold(static_cast<EMCSBiome>(a_Values[idx])))
 				{
 					a_Values[idx] = biFrozenRiver;
 				}
@@ -1113,7 +1110,6 @@ protected:
 
 	Underlying m_Underlying;
 };
-
 
 
 
@@ -1466,7 +1462,3 @@ protected:
 	Underlying m_Underlying;
 	Underlying m_Alteration;
 };
-
-
-
-

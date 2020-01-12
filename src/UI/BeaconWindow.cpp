@@ -7,13 +7,13 @@
 #include "BeaconWindow.h"
 #include "SlotArea.h"
 #include "../BlockEntities/BeaconEntity.h"
-#include "../Entities/Player.h"
+#include "../ClientHandle.h"
 
 
 
 
 
-cBeaconWindow::cBeaconWindow(int a_BlockX, int a_BlockY, int a_BlockZ, cBeaconEntity * a_Beacon) :
+cBeaconWindow::cBeaconWindow(cBeaconEntity * a_Beacon):
 	cWindow(wtBeacon, "Beacon"),
 	m_Beacon(a_Beacon)
 {

@@ -2,7 +2,6 @@
 #pragma once
 
 #include "BlockHandler.h"
-#include "../World.h"
 #include "../Items/ItemHandler.h"
 
 
@@ -19,9 +18,9 @@ public:
 	}
 
 
-	virtual void OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer *a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override
+	virtual bool OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer & a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override
 	{
-		a_ChunkInterface.UseBlockEntity(a_Player, a_BlockX, a_BlockY, a_BlockZ);
+		return a_ChunkInterface.UseBlockEntity(&a_Player, a_BlockX, a_BlockY, a_BlockZ);
 	}
 
 
@@ -31,22 +30,34 @@ public:
 	}
 
 
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
+
+
+
+	virtual cItems ConvertToPickups(NIBBLETYPE a_BlockMeta, cBlockEntity * a_BlockEntity, const cEntity * a_Digger, const cItem * a_Tool) override
 	{
 		// No pickups
+		return {};
 	}
-	
-	
-	virtual void OnDestroyedByPlayer(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ) override
+
+
+
+
+
+	virtual void OnPlayerBrokeBlock(
+		cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface,
+		cPlayer & a_Player,
+		Vector3i a_BlockPos,
+		BLOCKTYPE a_OldBlockType, NIBBLETYPE a_OldBlockMeta
+	) override
 	{
-		cItemHandler * Handler = a_Player->GetEquippedItem().GetHandler();
-		if (a_Player->IsGameModeCreative() || !Handler->CanHarvestBlock(E_BLOCK_MOB_SPAWNER))
+		auto handler = a_Player.GetEquippedItem().GetHandler();
+		if (!a_Player.IsGameModeSurvival() || !handler->CanHarvestBlock(E_BLOCK_MOB_SPAWNER))
 		{
 			return;
 		}
 
-		cFastRandom Random;
-		int Reward = 15 + Random.NextInt(15) + Random.NextInt(15);
-		a_WorldInterface.SpawnExperienceOrb((double)a_BlockX, (double)a_BlockY + 1, (double)a_BlockZ, Reward);
+		auto & random = GetRandomProvider();
+		int reward = 15 + random.RandInt(14) + random.RandInt(14);
+		a_WorldInterface.SpawnSplitExperienceOrbs(Vector3d(0.5, 0.5, 0.5) + a_BlockPos, reward);
 	}
 } ;

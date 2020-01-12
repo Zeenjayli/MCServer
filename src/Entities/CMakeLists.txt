@@ -1,9 +1,4 @@
 
-cmake_minimum_required (VERSION 2.6)
-project (MCServer)
-
-include_directories ("${PROJECT_SOURCE_DIR}/../")
-
 SET (SRCS
 	ArrowEntity.cpp
 	Boat.cpp
@@ -19,6 +14,7 @@ SET (SRCS
 	GhastFireballEntity.cpp
 	HangingEntity.cpp
 	ItemFrame.cpp
+	LeashKnot.cpp
 	Minecart.cpp
 	Painting.cpp
 	Pawn.cpp
@@ -47,6 +43,7 @@ SET (HDRS
 	GhastFireballEntity.h
 	HangingEntity.h
 	ItemFrame.h
+	LeashKnot.h
 	Minecart.h
 	Painting.h
 	Pawn.h
@@ -62,6 +59,5 @@ SET (HDRS
 
 if(NOT MSVC)
 	add_library(Entities ${SRCS} ${HDRS})
-
-	target_link_libraries(Entities WorldStorage)
+	target_link_libraries(Entities fmt::fmt WorldStorage)
 endif()

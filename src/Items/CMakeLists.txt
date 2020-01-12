@@ -1,17 +1,14 @@
 
-cmake_minimum_required (VERSION 2.6)
-project (MCServer)
-
-include_directories ("${PROJECT_SOURCE_DIR}/../")
-
 SET (SRCS
-	ItemHandler.cpp)
+	ItemHandler.cpp
+)
 
 SET (HDRS
 	ItemArmor.h
 	ItemBed.h
 	ItemBigFlower.h
 	ItemBoat.h
+	ItemBottle.h
 	ItemBow.h
 	ItemBrewingStand.h
 	ItemBucket.h
@@ -26,6 +23,7 @@ SET (HDRS
 	ItemFishingRod.h
 	ItemFlowerPot.h
 	ItemFood.h
+	ItemGoldenApple.h
 	ItemHandler.h
 	ItemHoe.h
 	ItemItemFrame.h
@@ -47,15 +45,17 @@ SET (HDRS
 	ItemSeeds.h
 	ItemShears.h
 	ItemShovel.h
-	ItemSlab.h
 	ItemSign.h
+	ItemSlab.h
 	ItemSpawnEgg.h
 	ItemString.h
 	ItemSugarcane.h
 	ItemSword.h
 	ItemThrowable.h
+	ItemAxe.h
 )
 
 if(NOT MSVC)
 	add_library(Items ${SRCS} ${HDRS})
+	target_link_libraries(Items fmt::fmt)
 endif()

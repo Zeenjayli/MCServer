@@ -2,7 +2,8 @@
 #include "Globals.h"  // NOTE: MSVC stupidness requires this to be the same across all modules
 
 #include "MobFamilyCollecter.h"
-#include "Mobs/Monster.h"
+
+
 
 
 
@@ -18,7 +19,7 @@ void cMobFamilyCollecter::CollectMob(cMonster & a_Monster)
 
 int cMobFamilyCollecter::GetNumberOfCollectedMobs(cMonster::eFamily a_Family)
 {
-	return (int)m_Mobs[a_Family].size();
+	return static_cast<int>(m_Mobs[a_Family].size());
 }
 
 

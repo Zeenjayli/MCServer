@@ -16,11 +16,7 @@
 
 
 cFile::cFile(void) :
-	#ifdef USE_STDIO_FILE
 	m_File(nullptr)
-	#else
-	m_File(INVALID_HANDLE_VALUE)
-	#endif  // USE_STDIO_FILE
 {
 	// Nothing needed yet
 }
@@ -30,11 +26,7 @@ cFile::cFile(void) :
 
 
 cFile::cFile(const AString & iFileName, eMode iMode) :
-	#ifdef USE_STDIO_FILE
 	m_File(nullptr)
-	#else
-	m_File(INVALID_HANDLE_VALUE)
-	#endif  // USE_STDIO_FILE
 {
 	Open(iFileName, iMode);
 }
@@ -58,12 +50,12 @@ cFile::~cFile()
 bool cFile::Open(const AString & iFileName, eMode iMode)
 {
 	ASSERT(!IsOpen());  // You should close the file before opening another one
-	
+
 	if (IsOpen())
 	{
 		Close();
 	}
-	
+
 	const char * Mode = nullptr;
 	switch (iMode)
 	{
@@ -78,11 +70,11 @@ bool cFile::Open(const AString & iFileName, eMode iMode)
 		return false;
 	}
 
-#ifdef _WIN32
-	m_File = _fsopen((FILE_IO_PREFIX + iFileName).c_str(), Mode, _SH_DENYWR);
-#else
-	m_File = fopen((FILE_IO_PREFIX + iFileName).c_str(), Mode);
-#endif  // _WIN32
+	#ifdef _WIN32
+		m_File = _fsopen((FILE_IO_PREFIX + iFileName).c_str(), Mode, _SH_DENYWR);
+	#else
+		m_File = fopen((FILE_IO_PREFIX + iFileName).c_str(), Mode);
+	#endif  // _WIN32
 
 	if ((m_File == nullptr) && (iMode == fmReadWrite))
 	{
@@ -91,11 +83,11 @@ bool cFile::Open(const AString & iFileName, eMode iMode)
 		// So now we know either the file doesn't exist or we don't have rights, no need to worry about file contents.
 		// Simply re-open for read-writing, erasing existing contents:
 
-#ifdef _WIN32
-		m_File = _fsopen((FILE_IO_PREFIX + iFileName).c_str(), "wb+", _SH_DENYWR);
-#else
-		m_File = fopen((FILE_IO_PREFIX + iFileName).c_str(), "wb+");
-#endif  // _WIN32
+		#ifdef _WIN32
+			m_File = _fsopen((FILE_IO_PREFIX + iFileName).c_str(), "wb+", _SH_DENYWR);
+		#else
+			m_File = fopen((FILE_IO_PREFIX + iFileName).c_str(), "wb+");
+		#endif  // _WIN32
 
 	}
 	return (m_File != nullptr);
@@ -133,13 +125,13 @@ bool cFile::IsOpen(void) const
 bool cFile::IsEOF(void) const
 {
 	ASSERT(IsOpen());
-	
+
 	if (!IsOpen())
 	{
 		// Unopened files behave as at EOF
 		return true;
 	}
-	
+
 	return (feof(m_File) != 0);
 }
 
@@ -147,32 +139,36 @@ bool cFile::IsEOF(void) const
 
 
 
-int cFile::Read (void * iBuffer, size_t iNumBytes)
+int cFile::Read (void * a_Buffer, size_t a_NumBytes)
 {
 	ASSERT(IsOpen());
-	
+
 	if (!IsOpen())
 	{
 		return -1;
 	}
-	
-	return (int)fread(iBuffer, 1, (size_t)iNumBytes, m_File);  // fread() returns the portion of Count parameter actually read, so we need to send iNumBytes as Count
+
+	return static_cast<int>(fread(a_Buffer, 1, a_NumBytes, m_File));  // fread() returns the portion of Count parameter actually read, so we need to send a_a_NumBytes as Count
 }
 
 
 
 
 
-int cFile::Write(const void * iBuffer, size_t iNumBytes)
+AString cFile::Read(size_t a_NumBytes)
 {
 	ASSERT(IsOpen());
-	
+
 	if (!IsOpen())
 	{
-		return -1;
+		return AString();
 	}
 
-	int res = (int)fwrite(iBuffer, 1, (size_t)iNumBytes, m_File);  // fwrite() returns the portion of Count parameter actually written, so we need to send iNumBytes as Count
+	// HACK: This depends on the knowledge that AString::data() returns the internal buffer, rather than a copy of it.
+	AString res;
+	res.resize(a_NumBytes);
+	auto newSize = fread(const_cast<char *>(res.data()), 1, a_NumBytes, m_File);
+	res.resize(newSize);
 	return res;
 }
 
@@ -180,53 +176,69 @@ int cFile::Write(const void * iBuffer, size_t iNumBytes)
 
 
 
-int cFile::Seek (int iPosition)
+int cFile::Write(const void * a_Buffer, size_t a_NumBytes)
 {
 	ASSERT(IsOpen());
-	
+
 	if (!IsOpen())
 	{
 		return -1;
 	}
-	
+
+	int res = static_cast<int>(fwrite(a_Buffer, 1, a_NumBytes, m_File));  // fwrite() returns the portion of Count parameter actually written, so we need to send a_NumBytes as Count
+	return res;
+}
+
+
+
+
+
+long cFile::Seek (int iPosition)
+{
+	ASSERT(IsOpen());
+
+	if (!IsOpen())
+	{
+		return -1;
+	}
+
 	if (fseek(m_File, iPosition, SEEK_SET) != 0)
 	{
 		return -1;
 	}
-	return (int)ftell(m_File);
+	return ftell(m_File);
 }
 
 
 
 
 
-
-int cFile::Tell (void) const
+long cFile::Tell (void) const
 {
 	ASSERT(IsOpen());
-	
+
 	if (!IsOpen())
 	{
 		return -1;
 	}
-	
-	return (int)ftell(m_File);
+
+	return ftell(m_File);
 }
 
 
 
 
 
-int cFile::GetSize(void) const
+long cFile::GetSize(void) const
 {
 	ASSERT(IsOpen());
-	
+
 	if (!IsOpen())
 	{
 		return -1;
 	}
-	
-	int CurPos = Tell();
+
+	long CurPos = Tell();
 	if (CurPos < 0)
 	{
 		return -1;
@@ -235,8 +247,8 @@ int cFile::GetSize(void) const
 	{
 		return -1;
 	}
-	int res = Tell();
-	if (fseek(m_File, (long)CurPos, SEEK_SET) != 0)
+	long res = Tell();
+	if (fseek(m_File, static_cast<long>(CurPos), SEEK_SET) != 0)
 	{
 		return -1;
 	}
@@ -250,17 +262,29 @@ int cFile::GetSize(void) const
 int cFile::ReadRestOfFile(AString & a_Contents)
 {
 	ASSERT(IsOpen());
-	
+
 	if (!IsOpen())
 	{
 		return -1;
 	}
-	
-	size_t DataSize = GetSize() - Tell();
-	
+
+	long TotalSize = GetSize();
+	if (TotalSize < 0)
+	{
+		return -1;
+	}
+
+	long Position = Tell();
+	if (Position < 0)
+	{
+		return -1;
+	}
+
+	auto DataSize = static_cast<size_t>(TotalSize - Position);
+
 	// HACK: This depends on the internal knowledge that AString's data() function returns the internal buffer directly
 	a_Contents.assign(DataSize, '\0');
-	return Read((void *)a_Contents.data(), DataSize);
+	return Read(static_cast<void *>(const_cast<char *>(a_Contents.data())), DataSize);
 }
 
 
@@ -277,7 +301,71 @@ bool cFile::Exists(const AString & a_FileName)
 
 
 
-bool cFile::Delete(const AString & a_FileName)
+bool cFile::Delete(const AString & a_Path)
+{
+	if (IsFolder(a_Path))
+	{
+		return DeleteFolder(a_Path);
+	}
+	else
+	{
+		return DeleteFile(a_Path);
+	}
+}
+
+
+
+
+
+bool cFile::DeleteFolder(const AString & a_FolderName)
+{
+	#ifdef _WIN32
+		return (RemoveDirectoryA(a_FolderName.c_str()) != 0);
+	#else  // _WIN32
+		return (rmdir(a_FolderName.c_str()) == 0);
+	#endif  // else _WIN32
+}
+
+
+
+
+
+bool cFile::DeleteFolderContents(const AString & a_FolderName)
+{
+	auto Contents = cFile::GetFolderContents(a_FolderName);
+	for (const auto & item: Contents)
+	{
+		// Remove the item:
+		auto WholePath = a_FolderName + GetPathSeparator() + item;
+		if (IsFolder(WholePath))
+		{
+			if (!DeleteFolderContents(WholePath))
+			{
+				return false;
+			}
+			if (!DeleteFolder(WholePath))
+			{
+				return false;
+			}
+		}
+		else
+		{
+			if (!DeleteFile(WholePath))
+			{
+				return false;
+			}
+		}
+	}  // for item - Contents[]
+
+	// All deletes succeeded
+	return true;
+}
+
+
+
+
+
+bool cFile::DeleteFile(const AString & a_FileName)
 {
 	return (remove(a_FileName.c_str()) == 0);
 }
@@ -298,7 +386,7 @@ bool cFile::Rename(const AString & a_OrigFileName, const AString & a_NewFileName
 bool cFile::Copy(const AString & a_SrcFileName, const AString & a_DstFileName)
 {
 	#ifdef _WIN32
-		return (CopyFileA(a_SrcFileName.c_str(), a_DstFileName.c_str(), true) != 0);
+		return (CopyFileA(a_SrcFileName.c_str(), a_DstFileName.c_str(), FALSE) != 0);
 	#else
 		// Other OSs don't have a direct CopyFile equivalent, do it the harder way:
 		std::ifstream src(a_SrcFileName.c_str(), std::ios::binary);
@@ -349,12 +437,12 @@ bool cFile::IsFile(const AString & a_Path)
 
 
 
-int cFile::GetSize(const AString & a_FileName)
+long cFile::GetSize(const AString & a_FileName)
 {
 	struct stat st;
 	if (stat(a_FileName.c_str(), &st) == 0)
 	{
-		return (int)st.st_size;
+		return static_cast<int>(st.st_size);
 	}
 	return -1;
 }
@@ -376,58 +464,103 @@ bool cFile::CreateFolder(const AString & a_FolderPath)
 
 
 
+bool cFile::CreateFolderRecursive(const AString & a_FolderPath)
+{
+	// Special case: Fail if the path is empty
+	if (a_FolderPath.empty())
+	{
+		return false;
+	}
+
+	// Go through each path element and create the folder:
+	auto len = a_FolderPath.length();
+	for (decltype(len) i = 0; i < len; i++)
+	{
+	#ifdef _WIN32
+		if ((a_FolderPath[i] == '\\') || (a_FolderPath[i] == '/'))
+	#else
+		if (a_FolderPath[i] == '/')
+	#endif
+		{
+			CreateFolder(a_FolderPath.substr(0, i));
+		}
+	}
+	CreateFolder(a_FolderPath);
+
+	// Check the result by querying whether the final path exists:
+	return IsFolder(a_FolderPath);
+}
+
+
+
+
+
 AStringVector cFile::GetFolderContents(const AString & a_Folder)
 {
 	AStringVector AllFiles;
-	
+
 	#ifdef _WIN32
 
-	// If the folder name doesn't contain the terminating slash / backslash, add it:
-	AString FileFilter = a_Folder;
-	if (
-		!FileFilter.empty() &&
-		(FileFilter[FileFilter.length() - 1] != '\\') &&
-		(FileFilter[FileFilter.length() - 1] != '/')
-	)
-	{
-		FileFilter.push_back('\\');
-	}
-	
-	// Find all files / folders:
-	FileFilter.append("*.*");
-	HANDLE hFind;
-	WIN32_FIND_DATAA FindFileData;
-	if ((hFind = FindFirstFileA(FileFilter.c_str(), &FindFileData)) != INVALID_HANDLE_VALUE)
-	{
-		do
+		// If the folder name doesn't contain the terminating slash / backslash, add it:
+		AString FileFilter = a_Folder;
+		if (
+			!FileFilter.empty() &&
+			(FileFilter[FileFilter.length() - 1] != '\\') &&
+			(FileFilter[FileFilter.length() - 1] != '/')
+		)
 		{
-			AllFiles.push_back(FindFileData.cFileName);
-		} while (FindNextFileA(hFind, &FindFileData));
-		FindClose(hFind);
-	}
-	
+			FileFilter.push_back('\\');
+		}
+
+		// Find all files / folders:
+		FileFilter.append("*.*");
+		HANDLE hFind;
+		WIN32_FIND_DATAA FindFileData;
+		if ((hFind = FindFirstFileA(FileFilter.c_str(), &FindFileData)) != INVALID_HANDLE_VALUE)
+		{
+			do
+			{
+				if (
+					(strcmp(FindFileData.cFileName, ".") == 0) ||
+					(strcmp(FindFileData.cFileName, "..") == 0)
+				)
+				{
+					continue;
+				}
+				AllFiles.push_back(FindFileData.cFileName);
+			} while (FindNextFileA(hFind, &FindFileData));
+			FindClose(hFind);
+		}
+
 	#else  // _WIN32
 
-	DIR * dp;
-	struct dirent *dirp;
-	AString Folder = a_Folder;
-	if (Folder.empty())
-	{
-		Folder = ".";
-	}
-	if ((dp = opendir(Folder.c_str())) == nullptr)
-	{
-		LOGERROR("Error (%i) opening directory \"%s\"\n", errno, Folder.c_str());
-	}
-	else
-	{
-		while ((dirp = readdir(dp)) != nullptr)
+		DIR * dp;
+		AString Folder = a_Folder;
+		if (Folder.empty())
 		{
-			AllFiles.push_back(dirp->d_name);
+			Folder = ".";
 		}
-		closedir(dp);
-	}
-	
+		if ((dp = opendir(Folder.c_str())) == nullptr)
+		{
+			LOGERROR("Error (%i) opening directory \"%s\"\n", errno, Folder.c_str());
+		}
+		else
+		{
+			struct dirent *dirp;
+			while ((dirp = readdir(dp)) != nullptr)
+			{
+				if (
+					(strcmp(dirp->d_name, ".") == 0) ||
+					(strcmp(dirp->d_name, "..") == 0)
+				)
+				{
+					continue;
+				}
+				AllFiles.push_back(dirp->d_name);
+			}
+			closedir(dp);
+		}
+
 	#endif  // else _WIN32
 
 	return AllFiles;
@@ -516,9 +649,13 @@ unsigned cFile::GetLastModificationTime(const AString & a_FileName)
 	{
 		return 0;
 	}
-	#ifdef _WIN32
+	#if defined(_WIN32)
 		// Windows returns times in local time already
 		return static_cast<unsigned>(st.st_mtime);
+	#elif defined(ANDROID)
+		// Identical to Linux below, but st_mtime is an unsigned long, so cast is needed:
+		auto Time = static_cast<time_t>(st.st_mtime);
+		return static_cast<unsigned>(mktime(localtime(&Time)));
 	#else
 		// Linux returns UTC time, convert to local timezone:
 		return static_cast<unsigned>(mktime(localtime(&st.st_mtime)));
@@ -555,13 +692,9 @@ AString cFile::GetExecutableExt(void)
 
 
 
-int cFile::Printf(const char * a_Fmt, ...)
+int cFile::Printf(const char * a_Fmt, fmt::ArgList a_ArgList)
 {
-	AString buf;
-	va_list args;
-	va_start(args, a_Fmt);
-	AppendVPrintf(buf, a_Fmt, args);
-	va_end(args);
+	AString buf = ::Printf(a_Fmt, a_ArgList);
 	return Write(buf.c_str(), buf.length());
 }
 

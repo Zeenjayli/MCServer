@@ -4,7 +4,9 @@
 // Implements the cCompoGenBiomal class representing the biome-aware composition generator
 
 #include "Globals.h"
-#include "ComposableGenerator.h"
+
+#include "CompoGenBiomal.h"
+
 #include "../IniFile.h"
 #include "../Noise/Noise.h"
 #include "../LinearUpscale.h"
@@ -36,7 +38,7 @@ public:
 		{
 			m_Pattern[i] = a_TopBlocks[i];
 		}
-		
+
 		// Fill the rest with stone:
 		static BlockInfo Stone = {E_BLOCK_STONE, 0};
 		for (int i = static_cast<int>(a_Count); i < cChunkDef::Height; i++)
@@ -44,9 +46,9 @@ public:
 			m_Pattern[i] = Stone;
 		}
 	}
-	
+
 	const BlockInfo * Get(void) const { return m_Pattern; }
-	
+
 protected:
 	BlockInfo m_Pattern[cChunkDef::Height];
 } ;
@@ -154,7 +156,6 @@ static cPattern::BlockInfo tbOFOrangeClay[] =
 
 
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // Individual patterns to use:
 
@@ -189,14 +190,14 @@ public:
 	{
 		initMesaPattern(a_Seed);
 	}
-	
+
 protected:
 	/** The block height at which water is generated instead of air. */
-	int m_SeaLevel;
+	HEIGHTTYPE m_SeaLevel;
 
 	/** The pattern used for mesa biomes. Initialized by seed on generator creation. */
 	cPattern::BlockInfo m_MesaPattern[2 * cChunkDef::Height];
-	
+
 	/** Noise used for selecting between dirt and sand on the ocean floor. */
 	cNoise m_OceanFloorSelect;
 
@@ -221,9 +222,9 @@ protected:
 
 	virtual void InitializeCompoGen(cIniFile & a_IniFile) override
 	{
-		m_SeaLevel = a_IniFile.GetValueSetI("Generator", "SeaLevel", m_SeaLevel);
+		m_SeaLevel = static_cast<HEIGHTTYPE>(a_IniFile.GetValueSetI("Generator", "SeaLevel", m_SeaLevel));
 	}
-	
+
 
 
 	/** Initializes the m_MesaPattern with a pattern based on the generator's seed. */
@@ -231,7 +232,7 @@ protected:
 	{
 		// In a loop, choose whether to use one, two or three layers of stained clay, then choose a color and width for each layer
 		// Separate each group with another layer of hardened clay
-		cNoise patternNoise((unsigned)a_Seed);
+		cNoise patternNoise(a_Seed);
 		static NIBBLETYPE allowedColors[] =
 		{
 			E_META_STAINED_CLAY_YELLOW,
@@ -265,8 +266,8 @@ protected:
 			rnd /= 2;
 			for (int lay = 0; lay < numLayers; lay++)
 			{
-				int numBlocks = layerSizes[(rnd % ARRAYCOUNT(layerSizes))];
-				NIBBLETYPE Color = allowedColors[(rnd / 4) % ARRAYCOUNT(allowedColors)];
+				int numBlocks = layerSizes[(static_cast<size_t>(rnd) % ARRAYCOUNT(layerSizes))];
+				NIBBLETYPE Color = allowedColors[static_cast<size_t>(rnd / 4) % ARRAYCOUNT(allowedColors)];
 				if (
 					((numBlocks == 3) && (numLayers == 2)) ||  // In two-layer mode disallow the 3-high layers:
 					(Color == E_META_STAINED_CLAY_WHITE))      // White stained clay can ever be only 1 block high
@@ -306,7 +307,7 @@ protected:
 		// Frequencies for the podzol floor selecting noise:
 		const NOISE_DATATYPE FrequencyX = 8;
 		const NOISE_DATATYPE FrequencyZ = 8;
-	
+
 		EMCSBiome Biome = a_ChunkDesc.GetBiome(a_RelX, a_RelZ);
 		switch (Biome)
 		{
@@ -362,8 +363,8 @@ protected:
 			case biMegaSpruceTaigaHills:
 			{
 				// Select the pattern to use - podzol, grass or grassless dirt:
-				NOISE_DATATYPE NoiseX = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkX() * cChunkDef::Width + a_RelX)) / FrequencyX;
-				NOISE_DATATYPE NoiseY = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + a_RelZ)) / FrequencyZ;
+				NOISE_DATATYPE NoiseX = (static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkX() * cChunkDef::Width + a_RelX)) / FrequencyX;
+				NOISE_DATATYPE NoiseY = (static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + a_RelZ)) / FrequencyZ;
 				NOISE_DATATYPE Val = m_OceanFloorSelect.CubicNoise2D(NoiseX, NoiseY);
 				const cPattern::BlockInfo * Pattern = (Val < -0.9) ? patGrassLess.Get() : ((Val > 0) ? patPodzol.Get() : patGrass.Get());
 				FillColumnPattern(a_ChunkDesc, a_RelX, a_RelZ, Pattern, a_ShapeColumn);
@@ -378,7 +379,7 @@ protected:
 				FillColumnPattern(a_ChunkDesc, a_RelX, a_RelZ, patSand.Get(), a_ShapeColumn);
 				return;
 			}
-		
+
 			case biMushroomIsland:
 			case biMushroomShore:
 			{
@@ -404,21 +405,28 @@ protected:
 			case biExtremeHillsM:
 			{
 				// Select the pattern to use - gravel, stone or grass:
-				NOISE_DATATYPE NoiseX = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkX() * cChunkDef::Width + a_RelX)) / FrequencyX;
-				NOISE_DATATYPE NoiseY = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + a_RelZ)) / FrequencyZ;
+				NOISE_DATATYPE NoiseX = (static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkX() * cChunkDef::Width + a_RelX)) / FrequencyX;
+				NOISE_DATATYPE NoiseY = (static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + a_RelZ)) / FrequencyZ;
 				NOISE_DATATYPE Val = m_OceanFloorSelect.CubicNoise2D(NoiseX, NoiseY);
 				const cPattern::BlockInfo * Pattern = (Val < 0.0) ? patStone.Get() : patGrass.Get();
 				FillColumnPattern(a_ChunkDesc, a_RelX, a_RelZ, Pattern, a_ShapeColumn);
 				return;
 			}
-			default:
+			case biInvalidBiome:
+			case biNether:
+			case biEnd:
+			case biNumBiomes:
+			case biVariant:
+			case biNumVariantBiomes:
 			{
-				ASSERT(!"Unhandled biome");
+				// This generator is not supposed to be used for these biomes, but it has to produce *something*
+				// so let's produce stone:
+				FillColumnPattern(a_ChunkDesc, a_RelX, a_RelZ, patStone.Get(), a_ShapeColumn);
 				return;
 			}
 		}  // switch (Biome)
 	}
-	
+
 
 
 	/** Fills the specified column with the specified pattern; restarts the pattern when air is reached,
@@ -427,7 +435,12 @@ protected:
 	{
 		bool HasHadWater = false;
 		int PatternIdx = 0;
-		int top = std::max(m_SeaLevel, a_ChunkDesc.GetHeight(a_RelX, a_RelZ));
+		HEIGHTTYPE top = a_ChunkDesc.GetHeight(a_RelX, a_RelZ);
+		if (top < m_SeaLevel)
+		{
+			top = m_SeaLevel;
+			a_ChunkDesc.SetHeight(a_RelX, a_RelZ, top - 1);
+		}
 		for (int y = top; y > 0; y--)
 		{
 			if (a_ShapeColumn[y] > 0)
@@ -437,23 +450,23 @@ protected:
 				PatternIdx++;
 				continue;
 			}
-		
+
 			// "air" or "water" part:
 			// Reset the pattern index to zero, so that the pattern is repeated from the top again:
 			PatternIdx = 0;
-		
+
 			if (y >= m_SeaLevel)
 			{
 				// "air" part, do nothing
 				continue;
 			}
-		
+
 			a_ChunkDesc.SetBlockType(a_RelX, y, a_RelZ, E_BLOCK_STATIONARY_WATER);
 			if (HasHadWater)
 			{
 				continue;
 			}
-		
+
 			// Select the ocean-floor pattern to use:
 			if (a_ChunkDesc.GetBiome(a_RelX, a_RelZ) == biDeepOcean)
 			{
@@ -485,14 +498,14 @@ protected:
 			return;
 		}
 
-		NOISE_DATATYPE NoiseX = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkX() * cChunkDef::Width + a_RelX)) / FrequencyX;
-		NOISE_DATATYPE NoiseY = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + a_RelZ)) / FrequencyZ;
-		int ClayFloor = m_SeaLevel - 6 + (int)(4.f * m_MesaFloor.CubicNoise2D(NoiseX, NoiseY));
+		NOISE_DATATYPE NoiseX = (static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkX() * cChunkDef::Width + a_RelX)) / FrequencyX;
+		NOISE_DATATYPE NoiseY = (static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + a_RelZ)) / FrequencyZ;
+		int ClayFloor = m_SeaLevel - 6 + static_cast<int>(4.f * m_MesaFloor.CubicNoise2D(NoiseX, NoiseY));
 		if (ClayFloor >= Top)
 		{
 			ClayFloor = Top - 1;
 		}
-	
+
 		if (Top - m_SeaLevel < 5)
 		{
 			// Simple case: top is red sand, then hardened clay down to ClayFloor, then stone:
@@ -508,7 +521,7 @@ protected:
 			a_ChunkDesc.SetBlockType(a_RelX, 0, a_RelZ, E_BLOCK_BEDROCK);
 			return;
 		}
-	
+
 		// Difficult case: use the mesa pattern and watch for overhangs:
 		int PatternIdx = cChunkDef::Height - (Top - ClayFloor);  // We want the block at index ClayFloor to be pattern's 256th block (first stone)
 		const cPattern::BlockInfo * Pattern = m_MesaPattern;
@@ -528,7 +541,7 @@ protected:
 				// "air" part, do nothing
 				continue;
 			}
-		
+
 			// "water" part, fill with water and choose new pattern for ocean floor, if not chosen already:
 			PatternIdx = 0;
 			a_ChunkDesc.SetBlockType(a_RelX, y, a_RelZ, E_BLOCK_STATIONARY_WATER);
@@ -536,7 +549,7 @@ protected:
 			{
 				continue;
 			}
-		
+
 			// Select the ocean-floor pattern to use:
 			Pattern = ChooseOceanFloorPattern(a_ChunkDesc.GetChunkX(), a_ChunkDesc.GetChunkZ(), a_RelX, a_RelZ);
 			HasHadWater = true;
@@ -559,7 +572,7 @@ protected:
 	}
 
 
-	
+
 	/** Returns the pattern to use for an ocean floor in the specified column.
 	The returned pattern is guaranteed to be 256 blocks long. */
 	const cPattern::BlockInfo * ChooseOceanFloorPattern(int a_ChunkX, int a_ChunkZ, int a_RelX, int a_RelZ)
@@ -569,8 +582,8 @@ protected:
 		const NOISE_DATATYPE FrequencyZ = 3;
 
 		// Select the ocean-floor pattern to use:
-		NOISE_DATATYPE NoiseX = ((NOISE_DATATYPE)(a_ChunkX * cChunkDef::Width + a_RelX)) / FrequencyX;
-		NOISE_DATATYPE NoiseY = ((NOISE_DATATYPE)(a_ChunkZ * cChunkDef::Width + a_RelZ)) / FrequencyZ;
+		NOISE_DATATYPE NoiseX = (static_cast<NOISE_DATATYPE>(a_ChunkX * cChunkDef::Width + a_RelX)) / FrequencyX;
+		NOISE_DATATYPE NoiseY = (static_cast<NOISE_DATATYPE>(a_ChunkZ * cChunkDef::Width + a_RelZ)) / FrequencyZ;
 		NOISE_DATATYPE Val = m_OceanFloorSelect.CubicNoise2D(NoiseX, NoiseY);
 		if (Val < -0.95)
 		{

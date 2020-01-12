@@ -12,33 +12,23 @@
 #if defined(_MSC_VER)
 	// MSVC produces warning C4481 on the override keyword usage, so disable the warning altogether
 	#pragma warning(disable:4481)
-	
+
 	// Disable some warnings that we don't care about:
 	#pragma warning(disable:4100)
 
 	#define OBSOLETE __declspec(deprecated)
-	
+
 	// No alignment needed in MSVC
 	#define ALIGN_8
 	#define ALIGN_16
-	
-	#define FORMATSTRING(formatIndex, va_argsIndex)
 
-	// MSVC has its own custom version of zu format
-	#define SIZE_T_FMT "%Iu"
-	#define SIZE_T_FMT_PRECISION(x) "%" #x "Iu"
-	#define SIZE_T_FMT_HEX "%Ix"
-	
 	#define NORETURN      __declspec(noreturn)
 
 #elif defined(__GNUC__)
 
 	// TODO: Can GCC explicitly mark classes as abstract (no instances can be created)?
 	#define abstract
-	
-	// TODO: Can GCC mark virtual methods as overriding (forcing them to have a virtual function of the same signature in the base class)
-	#define override
-	
+
 	#define OBSOLETE __attribute__((deprecated))
 
 	#define ALIGN_8 __attribute__((aligned(8)))
@@ -46,26 +36,17 @@
 
 	// Some portability macros :)
 	#define stricmp strcasecmp
-	
-	#define FORMATSTRING(formatIndex,va_argsIndex)
 
-	#define SIZE_T_FMT "%zu"
-	#define SIZE_T_FMT_PRECISION(x) "%" #x "zu"
-	#define SIZE_T_FMT_HEX "%zx"
-	
 	#define NORETURN      __attribute((__noreturn__))
 #else
 
 	#error "You are using an unsupported compiler, you might need to #define some stuff here for your compiler"
-	
+
 	/*
 	// Copy and uncomment this into another #elif section based on your compiler identification
-	
+
 	// Explicitly mark classes as abstract (no instances can be created)
 	#define abstract
-	
-	// Mark virtual methods as overriding (forcing them to have a virtual function of the same signature in the base class)
-	#define override
 
 	// Mark functions as obsolete, so that their usage results in a compile-time warning
 	#define OBSOLETE
@@ -74,8 +55,6 @@
 	#define ALIGN_8
 	#define ALIGN_16
 	*/
-	
-	#define FORMATSTRING(formatIndex,va_argsIndex) __attribute__((format (printf, formatIndex, va_argsIndex)))
 
 #endif
 
@@ -116,16 +95,16 @@ typedef unsigned char Byte;
 	#include <Windows.h>
 	#include <winsock2.h>
 	#include <ws2tcpip.h>
-	
+
 	// Windows SDK defines min and max macros, messing up with our std::min and std::max usage
 	#undef min
 	#undef max
-	
+
 	// Windows SDK defines GetFreeSpace as a constant, probably a Win16 API remnant
 	#ifdef GetFreeSpace
 		#undef GetFreeSpace
 	#endif  // GetFreeSpace
-	
+
 	#define SocketError WSAGetLastError()
 #else
 	#include <sys/types.h>
@@ -135,19 +114,16 @@ typedef unsigned char Byte;
 	#include <netinet/in.h>
 	#include <arpa/inet.h>
 	#include <netdb.h>
-	#include <time.h>
 	#include <dirent.h>
-	#include <errno.h>
 	#include <iostream>
 	#include <unistd.h>
 
-	#include <cstdio>
 	#include <cstring>
 	#include <pthread.h>
 	#include <semaphore.h>
-	#include <errno.h>
+	#include <cerrno>
 	#include <fcntl.h>
-	
+
 	typedef int SOCKET;
 	enum
 	{
@@ -155,9 +131,6 @@ typedef unsigned char Byte;
 	};
 	#define closesocket close
 	#define SocketError errno
-#if !defined(ANDROID_NDK)
-	#include <tr1/memory>
-#endif
 #endif
 
 #if !defined(ANDROID_NDK)
@@ -175,11 +148,11 @@ typedef unsigned char Byte;
 
 
 // CRT stuff:
-#include <assert.h>
-#include <stdio.h>
-#include <math.h>
-#include <stdarg.h>
-#include <time.h>
+#include <cassert>
+#include <cstdio>
+#include <cmath>
+#include <cstdarg>
+#include <ctime>
 
 
 
@@ -193,12 +166,16 @@ typedef unsigned char Byte;
 #include <map>
 #include <algorithm>
 #include <memory>
-
+#include <atomic>
+#include <mutex>
+#include <thread>
+#include <condition_variable>
 
 
 
 
 // Common headers (without macros):
+#include "fmt/format.h"
 #include "StringUtils.h"
 #include "OSSupport/CriticalSection.h"
 #include "OSSupport/Event.h"
@@ -211,15 +188,15 @@ typedef unsigned char Byte;
 
 // Common definitions:
 
-/// Evaluates to the number of elements in an array (compile-time!)
+/** Evaluates to the number of elements in an array (compile-time!) */
 #define ARRAYCOUNT(X) (sizeof(X) / sizeof(*(X)))
 
-/// Allows arithmetic expressions like "32 KiB" (but consider using parenthesis around it, "(32 KiB)" )
+/** Allows arithmetic expressions like "32 KiB" (but consider using parenthesis around it, "(32 KiB)") */
 #define KiB * 1024
 #define MiB * 1024 * 1024
 
-/// Faster than (int)floorf((float)x / (float)div)
-#define FAST_FLOOR_DIV( x, div ) ( (x) < 0 ? (((int)x / div) - 1) : ((int)x / div) )
+/** Faster than (int)floorf((float)x / (float)div) */
+#define FAST_FLOOR_DIV(x, div) ((x) < 0 ? (((int)x / div) - 1) : ((int)x / div))
 
 // Own version of assert() that writes failed assertions to the log for review
 #ifdef  NDEBUG
@@ -229,20 +206,23 @@ typedef unsigned char Byte;
 #endif
 
 // Pretty much the same as ASSERT() but stays in Release builds
-#define VERIFY( x ) ( !!(x) || ( LOGERROR("Verification failed: %s, file %s, line %i", #x, __FILE__, __LINE__ ), exit(1), 0 ) )
+#define VERIFY(x) (!!(x) || (LOGERROR("Verification failed: %s, file %s, line %i", #x, __FILE__, __LINE__), exit(1), 0))
 
 
 
 
 
-/// A generic interface used mainly in ForEach() functions
+/** A generic interface used mainly in ForEach() functions */
 template <typename Type> class cItemCallback
 {
 public:
-	/// Called for each item in the internal list; return true to stop the loop, or false to continue enumerating
+	/** Called for each item in the internal list; return true to stop the loop, or false to continue enumerating */
 	virtual bool Item(Type * a_Type) = 0;
 	virtual ~cItemCallback() {}
 } ;
+
+
+#include "BiomeDef.h"
 
 
 

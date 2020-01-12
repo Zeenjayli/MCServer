@@ -6,7 +6,6 @@
 #include "../Simulator/FluidSimulator.h"
 #include "../Blocks/BlockHandler.h"
 #include "../LineBlockTracer.h"
-#include "../BlockInServerPluginInterface.h"
 #include "../Blocks/ChunkInterface.h"
 
 
@@ -42,11 +41,17 @@ public:
 			}
 		}
 	}
-	
-	
-	
+
+
+
 	bool ScoopUpFluid(cWorld * a_World, cPlayer * a_Player, const cItem & a_Item, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace)
 	{
+		// Players can't pick up fluid while in adventure mode.
+		if (a_Player->IsGameModeAdventure())
+		{
+			return false;
+		}
+
 		if (a_BlockFace != BLOCK_FACE_NONE)
 		{
 			return false;
@@ -79,7 +84,14 @@ public:
 		{
 			return false;
 		}
-		
+
+		// Check to see if destination block is too far away
+		// Reach Distance Multiplayer = 5 Blocks
+		if ((BlockPos.x - a_Player->GetPosX() > 5) || (BlockPos.z - a_Player->GetPosZ() > 5))
+		{
+			return false;
+		}
+
 		// Remove water / lava block (unless plugins disagree)
 		if (!a_Player->PlaceBlock(BlockPos.x, BlockPos.y, BlockPos.z, E_BLOCK_AIR, 0))
 		{
@@ -96,7 +108,7 @@ public:
 				ASSERT(!"Inventory bucket mismatch");
 				return true;
 			}
-			if (a_Player->GetInventory().AddItem(cItem(NewItem), true, true) != 1)
+			if (a_Player->GetInventory().AddItem(cItem(NewItem)) != 1)
 			{
 				// The bucket didn't fit, toss it as a pickup:
 				a_Player->TossPickup(cItem(NewItem));
@@ -108,16 +120,24 @@ public:
 
 
 
+
+
 	bool PlaceFluid(
 		cWorld * a_World, cPlayer * a_Player, cBlockPluginInterface & a_PluginInterface, const cItem & a_Item,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, BLOCKTYPE a_FluidBlock
 	)
 	{
+		// Players can't place fluid while in adventure mode.
+		if (a_Player->IsGameModeAdventure())
+		{
+			return false;
+		}
+
 		if (a_BlockFace != BLOCK_FACE_NONE)
 		{
 			return false;
 		}
-		
+
 		BLOCKTYPE CurrentBlockType;
 		NIBBLETYPE CurrentBlockMeta;
 		eBlockFace EntryFace;
@@ -126,8 +146,15 @@ public:
 		{
 			return false;
 		}
-		
-		if (a_Player->GetGameMode() != gmCreative)
+
+		// Check to see if destination block is too far away
+		// Reach Distance Multiplayer = 5 Blocks
+		if ((BlockPos.x - a_Player->GetPosX() > 5) || (BlockPos.z - a_Player->GetPosZ() > 5))
+		{
+			return false;
+		}
+
+		if (!a_Player->IsGameModeCreative())
 		{
 			// Remove fluid bucket, add empty bucket:
 			if (!a_Player->GetInventory().RemoveOneEquippedItem())
@@ -137,12 +164,12 @@ public:
 				return false;
 			}
 			cItem Item(E_ITEM_BUCKET, 1);
-			if (!a_Player->GetInventory().AddItem(Item, true, true))
+			if (!a_Player->GetInventory().AddItem(Item))
 			{
 				return false;
 			}
 		}
-		
+
 		// Wash away anything that was there prior to placing:
 		if (cFluidSimulator::CanWashAway(CurrentBlockType))
 		{
@@ -151,19 +178,15 @@ public:
 				// Plugin disagrees with the washing-away
 				return false;
 			}
-
-			cBlockHandler * Handler = BlockHandler(CurrentBlockType);
-			if (Handler->DoesDropOnUnsuitable())
-			{
-				cChunkInterface ChunkInterface(a_World->GetChunkMap());
-				Handler->DropBlock(ChunkInterface, *a_World, a_PluginInterface, a_Player, BlockPos.x, BlockPos.y, BlockPos.z);
-			}
+			a_World->DropBlockAsPickups(BlockPos, a_Player, nullptr);
 			a_PluginInterface.CallHookPlayerBrokenBlock(*a_Player, BlockPos.x, BlockPos.y, BlockPos.z, EntryFace, CurrentBlockType, CurrentBlockMeta);
 		}
 
 		// Place the actual fluid block:
 		return a_Player->PlaceBlock(BlockPos.x, BlockPos.y, BlockPos.z, a_FluidBlock, 0);
 	}
+
+
 
 
 
@@ -175,14 +198,14 @@ public:
 		public:
 			Vector3i m_Pos;
 			bool     m_HasHitFluid;
-			
+
 
 			cCallbacks(void) :
 				m_HasHitFluid(false)
 			{
 			}
-			
-			virtual bool OnNextBlock(int a_BlockX, int a_BlockY, int a_BlockZ, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, char a_EntryFace) override
+
+			virtual bool OnNextBlock(int a_BlockX, int a_BlockY, int a_BlockZ, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, eBlockFace a_EntryFace) override
 			{
 				if (IsBlockWater(a_BlockType) || IsBlockLava(a_BlockType))
 				{
@@ -213,8 +236,8 @@ public:
 		a_BlockPos = Callbacks.m_Pos;
 		return true;
 	}
-	
-	
+
+
 
 	bool GetPlacementCoordsFromTrace(cWorld * a_World, cPlayer * a_Player, Vector3i & a_BlockPos, BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta, eBlockFace & a_BlockFace)
 	{
@@ -226,17 +249,17 @@ public:
 			BLOCKTYPE  m_ReplacedBlockType;
 			NIBBLETYPE m_ReplacedBlockMeta;
 			eBlockFace m_EntryFace;
-			
-			virtual bool OnNextBlock(int a_CBBlockX, int a_CBBlockY, int a_CBBlockZ, BLOCKTYPE a_CBBlockType, NIBBLETYPE a_CBBlockMeta, char a_CBEntryFace) override
+
+			virtual bool OnNextBlock(int a_CBBlockX, int a_CBBlockY, int a_CBBlockZ, BLOCKTYPE a_CBBlockType, NIBBLETYPE a_CBBlockMeta, eBlockFace a_CBEntryFace) override
 			{
-				if (a_CBBlockType != E_BLOCK_AIR)
+				if ((a_CBBlockType != E_BLOCK_AIR) && !IsBlockLiquid(a_CBBlockType))
 				{
 					m_ReplacedBlockType = a_CBBlockType;
 					m_ReplacedBlockMeta = a_CBBlockMeta;
 					m_EntryFace = static_cast<eBlockFace>(a_CBEntryFace);
-					if (!cFluidSimulator::CanWashAway(a_CBBlockType) && !IsBlockLiquid(a_CBBlockType))
+					if (!cFluidSimulator::CanWashAway(a_CBBlockType))
 					{
-						AddFaceDirection(a_CBBlockX, a_CBBlockY, a_CBBlockZ, (eBlockFace)a_CBEntryFace);  // Was an unwashawayable block, can't overwrite it!
+						AddFaceDirection(a_CBBlockX, a_CBBlockY, a_CBBlockZ, a_CBEntryFace);  // Was an unwashawayable block, can't overwrite it!
 					}
 					m_Pos.Set(a_CBBlockX, a_CBBlockY, a_CBBlockZ);  // (Block could be washed away, replace it)
 					return true;  // Abort tracing
@@ -249,7 +272,8 @@ public:
 		Vector3d Start(a_Player->GetEyePosition());
 		Vector3d End(a_Player->GetEyePosition() + a_Player->GetLookVector() * 5);
 
-		// cTracer::Trace returns true when whole line was traversed. By returning true from the callback when we hit something, we ensure that this never happens if liquid could be placed
+		// cLineBlockTracer::Trace() returns true when whole line was traversed. By returning true from the callback when we hit something,
+		// we ensure that this never happens if liquid could be placed
 		// Use this to judge whether the position is valid
 		if (!Tracer.Trace(Start.x, Start.y, Start.z, End.x, End.y, End.z))
 		{

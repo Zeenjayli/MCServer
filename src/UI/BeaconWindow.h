@@ -19,13 +19,13 @@
 class cBeaconWindow :
 	public cWindow
 {
-	typedef cWindow super;
+	using super = cWindow;
 
 public:
-	cBeaconWindow(int a_BlockX, int a_BlockY, int a_BlockZ, cBeaconEntity * a_Beacon);
+	cBeaconWindow(cBeaconEntity * a_Beacon);
 
 	cBeaconEntity * GetBeaconEntity(void) const { return m_Beacon; }
-	
+
 	virtual void DistributeStack(cItem & a_ItemStack, int a_Slot, cPlayer & a_Player, cSlotArea * a_ClickedArea, bool a_ShouldApply) override;
 
 	// cWindow Overrides:

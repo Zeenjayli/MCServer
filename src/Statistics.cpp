@@ -11,7 +11,7 @@ cStatInfo cStatInfo::ms_Info[statCount] =
 {
 	// The order must match the order of enum eStatistic
 
-	// http://minecraft.gamepedia.com/Achievements
+	// https://minecraft.gamepedia.com/Achievements
 
 	/*             Type          |      Name            |  Prerequisite      */
 	cStatInfo(achOpenInv,           "achievement.openInventory"),
@@ -48,7 +48,7 @@ cStatInfo cStatInfo::ms_Info[statCount] =
 	cStatInfo(achBreedCow,          "achievement.breedCow",           achKillCow),
 	cStatInfo(achThrowDiamonds,     "achievement.diamondsToYou",      achDiamonds),
 
-	// http://minecraft.gamepedia.com/Statistics
+	// https://minecraft.gamepedia.com/Statistics
 
 	/*             Type         |     Name          */
 	cStatInfo(statGamesQuit,      "stat.leaveGame"),
@@ -75,7 +75,6 @@ cStatInfo cStatInfo::ms_Info[statCount] =
 	cStatInfo(statJunkFished,     "stat.junkFished"),
 	cStatInfo(statTreasureFished, "stat.treasureFished")
 };
-
 
 
 
@@ -185,7 +184,7 @@ StatValue cStatManager::AddValue(const eStatistic a_Stat, const StatValue a_Delt
 
 void cStatManager::Reset(void)
 {
-	for (unsigned int i = 0; i < (unsigned int)statCount; ++i)
+	for (unsigned int i = 0; i < static_cast<unsigned int>(statCount); ++i)
 	{
 		m_MainStats[i] = 0;
 	}

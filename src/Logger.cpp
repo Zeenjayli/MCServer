@@ -1,5 +1,6 @@
 
 #include "Globals.h"  // NOTE: MSVC stupidness requires this to be the same across all modules
+#include "Logger.h"
 
 #include "OSSupport/IsThread.h"
 #ifdef _WIN32
@@ -62,21 +63,32 @@ void cLogger::LogSimple(AString a_Message, eLogLevel a_LogLevel)
 
 
 
-void cLogger::Log(const char * a_Format, eLogLevel a_LogLevel, va_list a_ArgList)
+void cLogger::LogPrintf(const char * a_Format, eLogLevel a_LogLevel, fmt::ArgList a_ArgList)
 {
-	AString Message;
-	AppendVPrintf(Message, a_Format, a_ArgList);
-	LogSimple(Message, a_LogLevel);
+	LogSimple(Printf(a_Format, a_ArgList), a_LogLevel);
 }
 
 
 
 
 
-void cLogger::AttachListener(cListener * a_Listener)
+void cLogger::LogFormat(const char * a_Format, eLogLevel a_LogLevel, fmt::ArgList a_ArgList)
 {
-	cCSLock Lock(m_CriticalSection);
-	m_LogListeners.push_back(a_Listener);
+	LogSimple(fmt::format(a_Format, a_ArgList), a_LogLevel);
+}
+
+
+
+
+
+cLogger::cAttachment cLogger::AttachListener(std::unique_ptr<cListener> a_Listener)
+{
+	auto nonOwning = a_Listener.get();
+	{
+		cCSLock Lock(m_CriticalSection);
+		m_LogListeners.push_back(std::move(a_Listener));
+	}
+	return cAttachment{nonOwning};
 }
 
 
@@ -86,7 +98,16 @@ void cLogger::AttachListener(cListener * a_Listener)
 void cLogger::DetachListener(cListener * a_Listener)
 {
 	cCSLock Lock(m_CriticalSection);
-	m_LogListeners.erase(std::remove(m_LogListeners.begin(), m_LogListeners.end(), a_Listener));
+	m_LogListeners.erase(
+		std::remove_if(
+			m_LogListeners.begin(),
+			m_LogListeners.end(),
+			[=](std::unique_ptr<cListener> & a_OtherListener) -> bool
+			{
+				return a_OtherListener.get() == a_Listener;
+			}
+		)
+	);
 }
 
 
@@ -96,48 +117,72 @@ void cLogger::DetachListener(cListener * a_Listener)
 ////////////////////////////////////////////////////////////////////////////////
 // Global functions
 
-void LOG(const char * a_Format, ...)
+void FLOG(const char * a_Format, fmt::ArgList a_ArgList)
 {
-	va_list argList;
-	va_start(argList, a_Format);
-	cLogger::GetInstance().Log(a_Format, cLogger::llRegular, argList);
-	va_end(argList);
+	cLogger::GetInstance().LogFormat(a_Format, cLogger::llRegular, a_ArgList);
 }
 
 
 
 
 
-void LOGINFO(const char * a_Format, ...)
+void FLOGINFO(const char * a_Format, fmt::ArgList a_ArgList)
 {
-	va_list argList;
-	va_start(argList, a_Format);
-	cLogger::GetInstance().Log( a_Format, cLogger::llInfo, argList);
-	va_end(argList);
+	cLogger::GetInstance().LogFormat( a_Format, cLogger::llInfo, a_ArgList);
 }
 
 
 
 
 
-void LOGWARN(const char * a_Format, ...)
+void FLOGWARNING(const char * a_Format, fmt::ArgList a_ArgList)
 {
-	va_list argList;
-	va_start(argList, a_Format);
-	cLogger::GetInstance().Log( a_Format, cLogger::llWarning, argList);
-	va_end(argList);
+	cLogger::GetInstance().LogFormat( a_Format, cLogger::llWarning, a_ArgList);
 }
 
 
 
 
 
-void LOGERROR(const char * a_Format, ...)
+void FLOGERROR(const char * a_Format, fmt::ArgList a_ArgList)
 {
-	va_list argList;
-	va_start(argList, a_Format);
-	cLogger::GetInstance().Log( a_Format, cLogger::llError, argList);
-	va_end(argList);
+	cLogger::GetInstance().LogFormat( a_Format, cLogger::llError, a_ArgList);
+}
+
+
+
+
+
+void LOG(const char * a_Format, fmt::ArgList a_ArgList)
+{
+	cLogger::GetInstance().LogPrintf(a_Format, cLogger::llRegular, a_ArgList);
+}
+
+
+
+
+
+void LOGINFO(const char * a_Format, fmt::ArgList a_ArgList)
+{
+	cLogger::GetInstance().LogPrintf( a_Format, cLogger::llInfo, a_ArgList);
+}
+
+
+
+
+
+void LOGWARNING(const char * a_Format, fmt::ArgList a_ArgList)
+{
+	cLogger::GetInstance().LogPrintf( a_Format, cLogger::llWarning, a_ArgList);
+}
+
+
+
+
+
+void LOGERROR(const char * a_Format, fmt::ArgList a_ArgList)
+{
+	cLogger::GetInstance().LogPrintf( a_Format, cLogger::llError, a_ArgList);
 }
 
 

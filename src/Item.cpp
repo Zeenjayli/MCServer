@@ -2,6 +2,7 @@
 #include "Globals.h"  // NOTE: MSVC stupidness requires this to be the same across all modules
 
 #include "Item.h"
+#include "ItemGrid.h"
 #include "json/json.h"
 #include "Items/ItemHandler.h"
 
@@ -41,22 +42,43 @@ short cItem::GetMaxDamage(void) const
 	switch (m_ItemType)
 	{
 		case E_ITEM_BOW:             return 384;
+		case E_ITEM_CHAIN_BOOTS:     return 196;
+		case E_ITEM_CHAIN_CHESTPLATE:return 241;
+		case E_ITEM_CHAIN_HELMET:    return 166;
+		case E_ITEM_CHAIN_LEGGINGS:  return 226;
 		case E_ITEM_DIAMOND_AXE:     return 1561;
+		case E_ITEM_DIAMOND_BOOTS:   return 430;
+		case E_ITEM_DIAMOND_CHESTPLATE: return 529;
+		case E_ITEM_DIAMOND_HELMET:  return 364;
 		case E_ITEM_DIAMOND_HOE:     return 1561;
+		case E_ITEM_DIAMOND_LEGGINGS:return 496;
 		case E_ITEM_DIAMOND_PICKAXE: return 1561;
 		case E_ITEM_DIAMOND_SHOVEL:  return 1561;
 		case E_ITEM_DIAMOND_SWORD:   return 1561;
 		case E_ITEM_FLINT_AND_STEEL: return 64;
+		case E_ITEM_FISHING_ROD:     return 65;
 		case E_ITEM_GOLD_AXE:        return 32;
+		case E_ITEM_GOLD_BOOTS:      return 92;
+		case E_ITEM_GOLD_CHESTPLATE: return 113;
+		case E_ITEM_GOLD_HELMET:     return 78;
 		case E_ITEM_GOLD_HOE:        return 32;
+		case E_ITEM_GOLD_LEGGINGS:   return 106;
 		case E_ITEM_GOLD_PICKAXE:    return 32;
 		case E_ITEM_GOLD_SHOVEL:     return 32;
 		case E_ITEM_GOLD_SWORD:      return 32;
 		case E_ITEM_IRON_AXE:        return 250;
+		case E_ITEM_IRON_BOOTS:      return 196;
+		case E_ITEM_IRON_CHESTPLATE: return 241;
+		case E_ITEM_IRON_HELMET:     return 166;
 		case E_ITEM_IRON_HOE:        return 250;
+		case E_ITEM_IRON_LEGGINGS:   return 226;
 		case E_ITEM_IRON_PICKAXE:    return 250;
 		case E_ITEM_IRON_SHOVEL:     return 250;
 		case E_ITEM_IRON_SWORD:      return 250;
+		case E_ITEM_LEATHER_BOOTS:   return 66;
+		case E_ITEM_LEATHER_CAP:     return 55;
+		case E_ITEM_LEATHER_PANTS:   return 76;
+		case E_ITEM_LEATHER_TUNIC:   return 81;
 		case E_ITEM_SHEARS:          return 250;
 		case E_ITEM_STONE_AXE:       return 131;
 		case E_ITEM_STONE_HOE:       return 131;
@@ -68,8 +90,9 @@ short cItem::GetMaxDamage(void) const
 		case E_ITEM_WOODEN_PICKAXE:  return 59;
 		case E_ITEM_WOODEN_SHOVEL:   return 59;
 		case E_ITEM_WOODEN_SWORD:    return 59;
+
+		default: return 0;
 	}
-	return 0;
 }
 
 
@@ -111,7 +134,6 @@ char cItem::GetMaxStackSize(void) const
 
 
 
-/// Returns the cItemHandler responsible for this item type
 cItemHandler * cItem::GetHandler(void) const
 {
 	return ItemHandler(m_ItemType);
@@ -139,7 +161,19 @@ void cItem::GetJson(Json::Value & a_OutValue) const
 		}
 		if (!IsLoreEmpty())
 		{
-			a_OutValue["Lore"] = m_Lore;
+			auto & LoreArray = (a_OutValue["Lore"] = Json::Value(Json::arrayValue));
+
+			for (const auto & Line : m_LoreTable)
+			{
+				LoreArray.append(Line);
+			}
+		}
+
+		if (m_ItemColor.IsValid())
+		{
+			a_OutValue["Color_Red"] = m_ItemColor.GetRed();
+			a_OutValue["Color_Green"] = m_ItemColor.GetGreen();
+			a_OutValue["Color_Blue"] = m_ItemColor.GetBlue();
 		}
 
 		if ((m_ItemType == E_ITEM_FIREWORK_ROCKET) || (m_ItemType == E_ITEM_FIREWORK_STAR))
@@ -162,22 +196,38 @@ void cItem::GetJson(Json::Value & a_OutValue) const
 
 void cItem::FromJson(const Json::Value & a_Value)
 {
-	m_ItemType = (ENUM_ITEM_ID)a_Value.get("ID", -1).asInt();
+	m_ItemType = static_cast<ENUM_ITEM_ID>(a_Value.get("ID", -1).asInt());
 	if (m_ItemType > 0)
 	{
-		m_ItemCount = (char)a_Value.get("Count", -1).asInt();
-		m_ItemDamage = (short)a_Value.get("Health", -1).asInt();
+		m_ItemCount = static_cast<char>(a_Value.get("Count", -1).asInt());
+		m_ItemDamage = static_cast<short>(a_Value.get("Health", -1).asInt());
 		m_Enchantments.Clear();
 		m_Enchantments.AddFromString(a_Value.get("ench", "").asString());
 		m_CustomName = a_Value.get("Name", "").asString();
-		m_Lore = a_Value.get("Lore", "").asString();
+		auto Lore = a_Value.get("Lore", Json::arrayValue);
+		for (auto & Line : Lore)
+		{
+			m_LoreTable.push_back(Line.asString());
+		}
+
+		int red = a_Value.get("Color_Red", -1).asInt();
+		int green = a_Value.get("Color_Green", -1).asInt();
+		int blue = a_Value.get("Color_Blue", -1).asInt();
+		if ((red > -1) && (red < static_cast<int>(cColor::COLOR_LIMIT)) && (green > -1) && (green < static_cast<int>(cColor::COLOR_LIMIT)) && (blue > -1) && (blue < static_cast<int>(cColor::COLOR_LIMIT)))
+		{
+			m_ItemColor.SetColor(static_cast<unsigned char>(red), static_cast<unsigned char>(green), static_cast<unsigned char>(blue));
+		}
+		else if ((red != -1) || (blue != -1) || (green != -1))
+		{
+			LOGWARNING("Item with invalid red, green, and blue values read in from json file.");
+		}
 
 		if ((m_ItemType == E_ITEM_FIREWORK_ROCKET) || (m_ItemType == E_ITEM_FIREWORK_STAR))
 		{
 			m_FireworkItem.m_HasFlicker = a_Value.get("Flicker", false).asBool();
 			m_FireworkItem.m_HasTrail = a_Value.get("Trail", false).asBool();
-			m_FireworkItem.m_Type = (NIBBLETYPE)a_Value.get("Type", 0).asInt();
-			m_FireworkItem.m_FlightTimeInTicks = (short)a_Value.get("FlightTimeInTicks", 0).asInt();
+			m_FireworkItem.m_Type = static_cast<NIBBLETYPE>(a_Value.get("Type", 0).asInt());
+			m_FireworkItem.m_FlightTimeInTicks = static_cast<short>(a_Value.get("FlightTimeInTicks", 0).asInt());
 			m_FireworkItem.ColoursFromString(a_Value.get("Colours", "").asString(), m_FireworkItem);
 			m_FireworkItem.FadeColoursFromString(a_Value.get("FadeColours", "").asString(), m_FireworkItem);
 		}
@@ -190,14 +240,14 @@ void cItem::FromJson(const Json::Value & a_Value)
 
 
 
-bool cItem::IsEnchantable(short a_ItemType, bool a_WithBook)
+bool cItem::IsEnchantable(short a_ItemType, bool a_FromBook)
 {
 	if (
 		ItemCategory::IsAxe(a_ItemType) ||
 		ItemCategory::IsSword(a_ItemType) ||
 		ItemCategory::IsShovel(a_ItemType) ||
 		ItemCategory::IsPickaxe(a_ItemType) ||
-		(a_WithBook && ItemCategory::IsHoe(a_ItemType)) ||
+		(a_FromBook && ItemCategory::IsHoe(a_ItemType)) ||
 		ItemCategory::IsArmor(a_ItemType)
 	)
 	{
@@ -217,7 +267,7 @@ bool cItem::IsEnchantable(short a_ItemType, bool a_WithBook)
 		case E_ITEM_SHEARS:
 		case E_ITEM_FLINT_AND_STEEL:
 		{
-			return a_WithBook;
+			return a_FromBook;
 		}
 	}
 
@@ -314,10 +364,10 @@ bool cItem::EnchantByXPLevels(int a_NumXPLevels)
 		return false;
 	}
 
-	cFastRandom Random;
-	int ModifiedEnchantmentLevel = a_NumXPLevels + (int)Random.NextFloat((float)Enchantability / 4) + (int)Random.NextFloat((float)Enchantability / 4) + 1;
-	float RandomBonus = 1.0F + (Random.NextFloat(1) + Random.NextFloat(1) - 1.0F) * 0.15F;
-	int FinalEnchantmentLevel = (int)(ModifiedEnchantmentLevel * RandomBonus + 0.5F);
+	auto & Random = GetRandomProvider();
+	int ModifiedEnchantmentLevel = a_NumXPLevels + Random.RandInt(Enchantability / 4) + Random.RandInt(Enchantability / 4) + 1;
+	float RandomBonus = 1.0F + (Random.RandReal() + Random.RandReal() - 1.0F) * 0.15F;
+	int FinalEnchantmentLevel = static_cast<int>(ModifiedEnchantmentLevel * RandomBonus + 0.5F);
 
 	cWeightedEnchantments Enchantments;
 	cEnchantments::AddItemEnchantmentWeights(Enchantments, m_ItemType, FinalEnchantmentLevel);
@@ -334,12 +384,10 @@ bool cItem::EnchantByXPLevels(int a_NumXPLevels)
 	// Checking for conflicting enchantments
 	cEnchantments::CheckEnchantmentConflictsFromVector(Enchantments, Enchantment1);
 
-	float NewEnchantmentLevel = (float)a_NumXPLevels;
-
 	// Next Enchantment (Second)
-	NewEnchantmentLevel = NewEnchantmentLevel / 2;
-	float SecondEnchantmentChance = (NewEnchantmentLevel + 1) / 50 * 100;
-	if (Enchantments.empty() || (Random.NextFloat(100) > SecondEnchantmentChance))
+	float NewEnchantmentLevel = a_NumXPLevels / 2.0f;
+	float SecondEnchantmentChance = (NewEnchantmentLevel + 1) / 50.0f;
+	if (Enchantments.empty() || !Random.RandBool(SecondEnchantmentChance))
 	{
 		return true;
 	}
@@ -352,9 +400,9 @@ bool cItem::EnchantByXPLevels(int a_NumXPLevels)
 	cEnchantments::CheckEnchantmentConflictsFromVector(Enchantments, Enchantment2);
 
 	// Next Enchantment (Third)
-	NewEnchantmentLevel = NewEnchantmentLevel / 2;
-	float ThirdEnchantmentChance = (NewEnchantmentLevel + 1) / 50 * 100;
-	if (Enchantments.empty() || (Random.NextFloat(100) > ThirdEnchantmentChance))
+	NewEnchantmentLevel = NewEnchantmentLevel / 2.0f;
+	float ThirdEnchantmentChance = (NewEnchantmentLevel + 1) / 50.0f;
+	if (Enchantments.empty() || !Random.RandBool(ThirdEnchantmentChance))
 	{
 		return true;
 	}
@@ -367,9 +415,9 @@ bool cItem::EnchantByXPLevels(int a_NumXPLevels)
 	cEnchantments::CheckEnchantmentConflictsFromVector(Enchantments, Enchantment3);
 
 	// Next Enchantment (Fourth)
-	NewEnchantmentLevel = NewEnchantmentLevel / 2;
-	float FourthEnchantmentChance = (NewEnchantmentLevel + 1) / 50 * 100;
-	if (Enchantments.empty() || (Random.NextFloat(100) > FourthEnchantmentChance))
+	NewEnchantmentLevel = NewEnchantmentLevel / 2.0f;
+	float FourthEnchantmentChance = (NewEnchantmentLevel + 1) / 50.0f;
+	if (Enchantments.empty() || !Random.RandBool(FourthEnchantmentChance))
 	{
 		return true;
 	}
@@ -383,17 +431,219 @@ bool cItem::EnchantByXPLevels(int a_NumXPLevels)
 
 
 
+int cItem::AddEnchantment(int a_EnchantmentID, unsigned int a_Level, bool a_FromBook)
+{
+	unsigned int OurLevel = m_Enchantments.GetLevel(a_EnchantmentID);
+	int Multiplier = cEnchantments::GetXPCostMultiplier(a_EnchantmentID, a_FromBook);
+	unsigned int NewLevel = 0;
+	if (OurLevel > a_Level)
+	{
+		// They don't add anything to us
+		NewLevel = OurLevel;
+	}
+	else if (OurLevel == a_Level)
+	{
+		// Bump it by 1
+		NewLevel = OurLevel + 1;
+	}
+	else
+	{
+		// Take the sacrifice's level
+		NewLevel = a_Level;
+	}
+	unsigned int LevelCap = cEnchantments::GetLevelCap(a_EnchantmentID);
+	if (NewLevel > LevelCap)
+	{
+		NewLevel = LevelCap;
+	}
+
+	m_Enchantments.SetLevel(a_EnchantmentID, NewLevel);
+	return static_cast<int>(NewLevel) * Multiplier;
+}
+
+
+
+
+
+bool cItem::CanHaveEnchantment(int a_EnchantmentID)
+{
+	if (m_ItemType == E_ITEM_ENCHANTED_BOOK)
+	{
+		// Enchanted books can take anything
+		return true;
+	}
+
+	// The organization here is based on the summary at:
+	// https://minecraft.gamepedia.com/Enchanting
+	// as of July 2017 (Minecraft 1.12).
+
+	// Hand tool enchantments
+	static const std::set<int> SwordEnchantments =
+	{
+		cEnchantments::enchBaneOfArthropods,
+		cEnchantments::enchFireAspect,
+		cEnchantments::enchKnockback,
+		cEnchantments::enchLooting,
+		cEnchantments::enchSharpness,
+		cEnchantments::enchSmite,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> AxeEnchantments =
+	{
+		cEnchantments::enchBaneOfArthropods,
+		cEnchantments::enchEfficiency,
+		cEnchantments::enchFortune,
+		cEnchantments::enchSharpness,
+		cEnchantments::enchSilkTouch,
+		cEnchantments::enchSmite,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> ToolEnchantments =
+	{
+		cEnchantments::enchEfficiency,
+		cEnchantments::enchFortune,
+		cEnchantments::enchSilkTouch,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> ShearEnchantments =
+	{
+		cEnchantments::enchEfficiency,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> BowEnchantments =
+	{
+		cEnchantments::enchFlame,
+		cEnchantments::enchInfinity,
+		cEnchantments::enchPower,
+		cEnchantments::enchPunch
+	};
+	static const std::set<int> FishingEnchantments =
+	{
+		cEnchantments::enchLuckOfTheSea,
+		cEnchantments::enchLure
+	};
+	static const std::set<int> MiscEnchantments =
+	{
+		cEnchantments::enchUnbreaking
+	};
+
+	if (ItemCategory::IsSword(m_ItemType))
+	{
+		return SwordEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (ItemCategory::IsAxe(m_ItemType))
+	{
+		return AxeEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (ItemCategory::IsPickaxe(m_ItemType) || ItemCategory::IsShovel(m_ItemType))
+	{
+		return ToolEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (m_ItemType == E_ITEM_SHEARS)
+	{
+		return ShearEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (m_ItemType == E_ITEM_BOW)
+	{
+		return BowEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (m_ItemType == E_ITEM_FISHING_ROD)
+	{
+		return FishingEnchantments.count(a_EnchantmentID) > 0;
+	}
+	if (ItemCategory::IsHoe(m_ItemType) || (m_ItemType == E_ITEM_FLINT_AND_STEEL) || (m_ItemType == E_ITEM_CARROT_ON_STICK) || (m_ItemType == E_ITEM_SHIELD))
+	{
+		return MiscEnchantments.count(a_EnchantmentID) > 0;
+	}
+
+	// Armor enchantments
+	static const std::set<int> ArmorEnchantments =
+	{
+		cEnchantments::enchBlastProtection,
+		cEnchantments::enchFireProtection,
+		cEnchantments::enchProjectileProtection,
+		cEnchantments::enchProtection,
+		cEnchantments::enchThorns,
+		cEnchantments::enchUnbreaking
+	};
+	static const std::set<int> HatOnlyEnchantments =
+	{
+		cEnchantments::enchAquaAffinity,
+		cEnchantments::enchRespiration
+	};
+	static const std::set<int> BootOnlyEnchantments =
+	{
+		cEnchantments::enchDepthStrider,
+		cEnchantments::enchFeatherFalling
+	};
+
+	if (ItemCategory::IsBoots(m_ItemType))
+	{
+		return (BootOnlyEnchantments.count(a_EnchantmentID) > 0) || (ArmorEnchantments.count(a_EnchantmentID) > 0);
+	}
+	if (ItemCategory::IsHelmet(m_ItemType))
+	{
+		return (HatOnlyEnchantments.count(a_EnchantmentID) > 0) || (ArmorEnchantments.count(a_EnchantmentID) > 0);
+	}
+	if (ItemCategory::IsArmor(m_ItemType))
+	{
+		return ArmorEnchantments.count(a_EnchantmentID) > 0;
+	}
+	return false;
+}
+
+
+
+
+
+int cItem::AddEnchantmentsFromItem(const cItem & a_Other)
+{
+	bool FromBook = (a_Other.m_ItemType == E_ITEM_ENCHANTED_BOOK);
+
+	// Consider each enchantment seperately
+	int EnchantingCost = 0;
+	for (auto & Enchantment : a_Other.m_Enchantments)
+	{
+		if (CanHaveEnchantment(Enchantment.first))
+		{
+			if (!m_Enchantments.CanAddEnchantment(Enchantment.first))
+			{
+				// Cost of incompatible enchantments
+				EnchantingCost += 1;
+			}
+			else
+			{
+				EnchantingCost += AddEnchantment(Enchantment.first, Enchantment.second, FromBook);
+			}
+		}
+	}
+	return EnchantingCost;
+}
+
+
+
+
+
 ////////////////////////////////////////////////////////////////////////////////
 // cItems:
 
+cItems::cItems(cItem && a_InitialItem)
+{
+	push_back(std::move(a_InitialItem));
+}
+
+
+
+
+
 cItem * cItems::Get(int a_Idx)
 {
-	if ((a_Idx < 0) || (a_Idx >= (int)size()))
+	if ((a_Idx < 0) || (a_Idx >= static_cast<int>(size())))
 	{
-		LOGWARNING("cItems: Attempt to get an out-of-bounds item at index %d; there are currently " SIZE_T_FMT " items. Returning a nil.", a_Idx, size());
+		LOGWARNING("cItems: Attempt to get an out-of-bounds item at index %d; there are currently %zu items. Returning a nil.", a_Idx, size());
 		return nullptr;
 	}
-	return &at(a_Idx);
+	return &at(static_cast<size_t>(a_Idx));
 }
 
 
@@ -402,12 +652,12 @@ cItem * cItems::Get(int a_Idx)
 
 void cItems::Set(int a_Idx, const cItem & a_Item)
 {
-	if ((a_Idx < 0) || (a_Idx >= (int)size()))
+	if ((a_Idx < 0) || (a_Idx >= static_cast<int>(size())))
 	{
-		LOGWARNING("cItems: Attempt to set an item at an out-of-bounds index %d; there are currently " SIZE_T_FMT " items. Not setting.", a_Idx, size());
+		LOGWARNING("cItems: Attempt to set an item at an out-of-bounds index %d; there are currently %zu items. Not setting.", a_Idx, size());
 		return;
 	}
-	at(a_Idx) = a_Item;
+	at(static_cast<size_t>(a_Idx)) = a_Item;
 }
 
 
@@ -416,9 +666,9 @@ void cItems::Set(int a_Idx, const cItem & a_Item)
 
 void cItems::Delete(int a_Idx)
 {
-	if ((a_Idx < 0) || (a_Idx >= (int)size()))
+	if ((a_Idx < 0) || (a_Idx >= static_cast<int>(size())))
 	{
-		LOGWARNING("cItems: Attempt to delete an item at an out-of-bounds index %d; there are currently " SIZE_T_FMT " items. Ignoring.", a_Idx, size());
+		LOGWARNING("cItems: Attempt to delete an item at an out-of-bounds index %d; there are currently %zu items. Ignoring.", a_Idx, size());
 		return;
 	}
 	erase(begin() + a_Idx);
@@ -430,14 +680,55 @@ void cItems::Delete(int a_Idx)
 
 void cItems::Set(int a_Idx, short a_ItemType, char a_ItemCount, short a_ItemDamage)
 {
-	if ((a_Idx < 0) || (a_Idx >= (int)size()))
+	if ((a_Idx < 0) || (a_Idx >= static_cast<int>(size())))
 	{
-		LOGWARNING("cItems: Attempt to set an item at an out-of-bounds index %d; there are currently " SIZE_T_FMT " items. Not setting.", a_Idx, size());
+		LOGWARNING("cItems: Attempt to set an item at an out-of-bounds index %d; there are currently %zu items. Not setting.", a_Idx, size());
 		return;
 	}
-	at(a_Idx) = cItem(a_ItemType, a_ItemCount, a_ItemDamage);
+	at(static_cast<size_t>(a_Idx)) = cItem(a_ItemType, a_ItemCount, a_ItemDamage);
 }
 
 
 
 
+
+bool cItems::Contains(const cItem & a_Item)
+{
+	for (auto itr : *this)
+	{
+		if (a_Item.IsEqual(itr))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
+
+
+bool cItems::ContainsType(const cItem & a_Item)
+{
+	for (auto itr : *this)
+	{
+		if (a_Item.IsSameType(itr))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
+
+
+void cItems::AddItemGrid(const cItemGrid & a_ItemGrid)
+{
+	auto numSlots = a_ItemGrid.GetNumSlots();
+	for (int i = 0; i < numSlots; ++i)
+	{
+		Add(a_ItemGrid.GetSlot(i));
+	}
+}

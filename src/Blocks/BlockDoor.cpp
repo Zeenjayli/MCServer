@@ -1,14 +1,14 @@
 
 #include "Globals.h"
 #include "BlockDoor.h"
-#include "../Entities/Player.h"
+#include "../EffectID.h"
 
 
 
 
 
-cBlockDoorHandler::cBlockDoorHandler(BLOCKTYPE a_BlockType)
-	: super(a_BlockType)
+cBlockDoorHandler::cBlockDoorHandler(BLOCKTYPE a_BlockType):
+	super(a_BlockType)
 {
 }
 
@@ -16,24 +16,22 @@ cBlockDoorHandler::cBlockDoorHandler(BLOCKTYPE a_BlockType)
 
 
 
-void cBlockDoorHandler::OnDestroyed(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, int a_BlockX, int a_BlockY, int a_BlockZ)
+void cBlockDoorHandler::OnBroken(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, Vector3i a_BlockPos, BLOCKTYPE a_OldBlockType, NIBBLETYPE a_OldBlockMeta)
 {
-	NIBBLETYPE OldMeta = a_ChunkInterface.GetBlockMeta(a_BlockX, a_BlockY, a_BlockZ);
-
-	if (OldMeta & 8)
+	if ((a_OldBlockMeta & 0x08) != 0)
 	{
 		// Was upper part of door
-		if (IsDoorBlockType(a_ChunkInterface.GetBlock(a_BlockX, a_BlockY - 1, a_BlockZ)))
+		if ((a_BlockPos.y > 0) && IsDoorBlockType(a_ChunkInterface.GetBlock(a_BlockPos.addedY(-1))))
 		{
-			a_ChunkInterface.FastSetBlock(a_BlockX, a_BlockY - 1, a_BlockZ, E_BLOCK_AIR, 0);
+			a_ChunkInterface.DropBlockAsPickups(a_BlockPos.addedY(-1));
 		}
 	}
 	else
 	{
 		// Was lower part
-		if (IsDoorBlockType(a_ChunkInterface.GetBlock(a_BlockX, a_BlockY + 1, a_BlockZ)))
+		if ((a_BlockPos.y < cChunkDef::Height - 1) && IsDoorBlockType(a_ChunkInterface.GetBlock(a_BlockPos.addedY(1))))
 		{
-			a_ChunkInterface.FastSetBlock(a_BlockX, a_BlockY + 1, a_BlockZ, E_BLOCK_AIR, 0);
+			a_ChunkInterface.DropBlockAsPickups(a_BlockPos.addedY(1));
 		}
 	}
 }
@@ -42,7 +40,7 @@ void cBlockDoorHandler::OnDestroyed(cChunkInterface & a_ChunkInterface, cWorldIn
 
 
 
-void cBlockDoorHandler::OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ)
+bool cBlockDoorHandler::OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer & a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ)
 {
 	UNUSED(a_WorldInterface);
 	UNUSED(a_BlockFace);
@@ -50,24 +48,45 @@ void cBlockDoorHandler::OnUse(cChunkInterface & a_ChunkInterface, cWorldInterfac
 	UNUSED(a_CursorY);
 	UNUSED(a_CursorZ);
 
-	if (a_ChunkInterface.GetBlock(a_BlockX, a_BlockY, a_BlockZ) == E_BLOCK_WOODEN_DOOR)
+	switch (a_ChunkInterface.GetBlock({a_BlockX, a_BlockY, a_BlockZ}))
 	{
-		ChangeDoor(a_ChunkInterface, a_BlockX, a_BlockY, a_BlockZ);
-		a_Player->GetWorld()->BroadcastSoundParticleEffect(1003, a_BlockX, a_BlockY, a_BlockZ, 0, a_Player->GetClientHandle());
+		default:
+		{
+			ASSERT(!"Unhandled door block type");
+		}
+		case E_BLOCK_ACACIA_DOOR:
+		case E_BLOCK_BIRCH_DOOR:
+		case E_BLOCK_DARK_OAK_DOOR:
+		case E_BLOCK_JUNGLE_DOOR:
+		case E_BLOCK_SPRUCE_DOOR:
+		case E_BLOCK_OAK_DOOR:
+		{
+			ChangeDoor(a_ChunkInterface, a_BlockX, a_BlockY, a_BlockZ);
+			a_Player.GetWorld()->BroadcastSoundParticleEffect(EffectID::SFX_RANDOM_WOODEN_DOOR_OPEN, {a_BlockX, a_BlockY, a_BlockZ}, 0, a_Player.GetClientHandle());
+			break;
+		}
+		// Prevent iron door from opening on player click
+		case E_BLOCK_IRON_DOOR:
+		{
+			OnCancelRightClick(a_ChunkInterface, a_WorldInterface, a_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace);
+			break;
+		}
 	}
+
+	return true;
 }
 
 
 
 
 
-void cBlockDoorHandler::OnCancelRightClick(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace)
+void cBlockDoorHandler::OnCancelRightClick(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer & a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace)
 {
 	UNUSED(a_ChunkInterface);
-	
+
 	a_WorldInterface.SendBlockTo(a_BlockX, a_BlockY, a_BlockZ, a_Player);
-	NIBBLETYPE Meta = a_ChunkInterface.GetBlockMeta(a_BlockX, a_BlockY, a_BlockZ);
-	
+	NIBBLETYPE Meta = a_ChunkInterface.GetBlockMeta({a_BlockX, a_BlockY, a_BlockZ});
+
 	if (Meta & 0x8)
 	{
 		// Current block is top of the door
@@ -78,6 +97,16 @@ void cBlockDoorHandler::OnCancelRightClick(cChunkInterface & a_ChunkInterface, c
 		// Current block is bottom of the door
 		a_WorldInterface.SendBlockTo(a_BlockX, a_BlockY + 1, a_BlockZ, a_Player);
 	}
+}
+
+
+
+
+
+cBoundingBox cBlockDoorHandler::GetPlacementCollisionBox(BLOCKTYPE a_XM, BLOCKTYPE a_XP, BLOCKTYPE a_YM, BLOCKTYPE a_YP, BLOCKTYPE a_ZM, BLOCKTYPE a_ZP)
+{
+	// Doors can be placed inside the player
+	return cBoundingBox(0, 0, 0, 0, 0, 0);
 }
 
 
@@ -118,6 +147,8 @@ NIBBLETYPE cBlockDoorHandler::MetaRotateCW(NIBBLETYPE a_Meta)
 
 
 
+
+
 NIBBLETYPE cBlockDoorHandler::MetaMirrorXY(NIBBLETYPE a_Meta)
 {
 	/*
@@ -147,6 +178,8 @@ NIBBLETYPE cBlockDoorHandler::MetaMirrorXY(NIBBLETYPE a_Meta)
 	// Not Facing North or South; No change.
 	return a_Meta;
 }
+
+
 
 
 

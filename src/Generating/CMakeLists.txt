@@ -1,9 +1,4 @@
 
-cmake_minimum_required (VERSION 2.6)
-project (MCServer)
-
-include_directories ("${PROJECT_SOURCE_DIR}/../")
-
 SET (SRCS
 	BioGen.cpp
 	Caves.cpp
@@ -19,20 +14,20 @@ SET (SRCS
 	GridStructGen.cpp
 	HeiGen.cpp
 	MineShafts.cpp
-	NetherFortGen.cpp
 	Noise3DGenerator.cpp
-	POCPieceGenerator.cpp
-	PieceGenerator.cpp
+	PieceGeneratorBFSTree.cpp
+	PiecePool.cpp
+	PieceStructuresGen.cpp
 	Prefab.cpp
 	PrefabPiecePool.cpp
-	RainbowRoadsGen.cpp
+	PrefabStructure.cpp
 	Ravines.cpp
 	RoughRavines.cpp
 	StructGen.cpp
-	TestRailsGen.cpp
 	Trees.cpp
 	TwoHeights.cpp
-	UnderwaterBaseGen.cpp
+	VerticalLimit.cpp
+	VerticalStrategy.cpp
 	VillageGen.cpp
 )
 
@@ -53,27 +48,30 @@ SET (HDRS
 	HeiGen.h
 	IntGen.h
 	MineShafts.h
-	NetherFortGen.h
 	Noise3DGenerator.h
-	POCPieceGenerator.h
-	PieceGenerator.h
+	PieceGeneratorBFSTree.h
+	PiecePool.h
+	PieceStructuresGen.h
 	Prefab.h
 	PrefabPiecePool.h
+	PrefabStructure.h
 	ProtIntGen.h
-	RainbowRoadsGen.h
 	Ravines.h
 	RoughRavines.h
 	ShapeGen.cpp
 	StructGen.h
-	TestRailsGen.h
 	Trees.h
 	TwoHeights.h
-	UnderwaterBaseGen.h
+	VerticalLimit.h
+	VerticalStrategy.h
 	VillageGen.h
 )
 
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+	set_source_files_properties(CompoGenBiomal.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=global-constructors")
+endif()
+
 if(NOT MSVC)
 	add_library(Generating ${SRCS} ${HDRS})
-
-	target_link_libraries(Generating OSSupport Blocks)
+	target_link_libraries(Generating fmt::fmt OSSupport Blocks Bindings)
 endif()

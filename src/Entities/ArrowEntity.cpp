@@ -8,8 +8,8 @@
 
 
 
-cArrowEntity::cArrowEntity(cEntity * a_Creator, double a_X, double a_Y, double a_Z, const Vector3d & a_Speed) :
-	super(pkArrow, a_Creator, a_X, a_Y, a_Z, 0.5, 0.5),
+cArrowEntity::cArrowEntity(cEntity * a_Creator, Vector3d a_Pos, Vector3d a_Speed):
+	super(pkArrow, a_Creator, a_Pos, 0.5, 0.5),
 	m_PickupState(psNoPickup),
 	m_DamageCoeff(2),
 	m_IsCritical(false),
@@ -25,9 +25,8 @@ cArrowEntity::cArrowEntity(cEntity * a_Creator, double a_X, double a_Y, double a
 	SetAirDrag(0.2f);
 	SetYawFromSpeed();
 	SetPitchFromSpeed();
-	LOGD("Created arrow %d with speed {%.02f, %.02f, %.02f} and rot {%.02f, %.02f}",
-		m_UniqueID, GetSpeedX(), GetSpeedY(), GetSpeedZ(),
-		GetYaw(), GetPitch()
+	FLOGD("Created arrow {0} with speed {1:.02f} and rot {{{2:.02f}, {3:.02f}}}",
+		m_UniqueID, GetSpeed(), GetYaw(), GetPitch()
 	);
 }
 
@@ -66,15 +65,14 @@ bool cArrowEntity::CanPickup(const cPlayer & a_Player) const
 		case psInSurvivalOrCreative: return (a_Player.IsGameModeSurvival() || a_Player.IsGameModeCreative());
 		case psInCreative:           return a_Player.IsGameModeCreative();
 	}
-	ASSERT(!"Unhandled pickup state");
-	return false;
+	UNREACHABLE("Unsupported arrow pickup state");
 }
 
 
 
 
 
-void cArrowEntity::OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_HitFace)
+void cArrowEntity::OnHitSolidBlock(Vector3d a_HitPos, eBlockFace a_HitFace)
 {
 	Vector3d Hit = a_HitPos;
 	Hit += GetSpeed().NormalizeCopy() / 100000;  // Make arrow sink into block a bit so it lodges (TODO: investigate how to stop them going so far so that they become black clientside)
@@ -84,14 +82,14 @@ void cArrowEntity::OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_HitFa
 
 	int X = BlockHit.x, Y = BlockHit.y, Z = BlockHit.z;
 	m_HitBlockPos = Vector3i(X, Y, Z);
-	
+
 	// Broadcast arrow hit sound
-	m_World->BroadcastSoundEffect("random.bowhit", (double)X, (double)Y, (double)Z, 0.5f, (float)(0.75 + ((float)((GetUniqueID() * 23) % 32)) / 64));
+	m_World->BroadcastSoundEffect("entity.arrow.hit", BlockHit, 0.5f, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
 
 	if ((m_World->GetBlock(Hit) == E_BLOCK_TNT) && IsOnFire())
 	{
 		m_World->SetBlock(X, Y, Z, E_BLOCK_AIR, 0);
-		m_World->SpawnPrimedTNT(X, Y, Z);
+		m_World->SpawnPrimedTNT(Vector3d(BlockHit));
 	}
 
 }
@@ -100,46 +98,35 @@ void cArrowEntity::OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_HitFa
 
 
 
-void cArrowEntity::OnHitEntity(cEntity & a_EntityHit, const Vector3d & a_HitPos)
+void cArrowEntity::OnHitEntity(cEntity & a_EntityHit, Vector3d a_HitPos)
 {
-	int Damage = (int)(GetSpeed().Length() / 20 * m_DamageCoeff + 0.5);
+	super::OnHitEntity(a_EntityHit, a_HitPos);
+
+	int Damage = static_cast<int>(GetSpeed().Length() / 20 * m_DamageCoeff + 0.5);
 	if (m_IsCritical)
 	{
 		Damage += m_World->GetTickRandomNumber(Damage / 2 + 2);
 	}
 
-	int PowerLevel = m_CreatorData.m_Enchantments.GetLevel(cEnchantments::enchPower);
+	unsigned int PowerLevel = m_CreatorData.m_Enchantments.GetLevel(cEnchantments::enchPower);
 	if (PowerLevel > 0)
 	{
-		int ExtraDamage = (int)ceil(0.25 * (PowerLevel + 1));
+		int ExtraDamage = static_cast<int>(ceil(0.25 * (PowerLevel + 1)));
 		Damage += ExtraDamage;
 	}
 
-	int KnockbackAmount = 1;
-	int PunchLevel = m_CreatorData.m_Enchantments.GetLevel(cEnchantments::enchPunch);
-	if (PunchLevel > 0)
-	{
-		Vector3d LookVector = GetLookVector();
-		Vector3f FinalSpeed = Vector3f(0, 0, 0);
-		switch (PunchLevel)
-		{
-			case 1: FinalSpeed = LookVector * Vector3d(5, 0.3, 5); break;
-			case 2: FinalSpeed = LookVector * Vector3d(8, 0.3, 8); break;
-			default: break;
-		}
-		a_EntityHit.SetSpeed(FinalSpeed);
-	}
+	unsigned int PunchLevel = m_CreatorData.m_Enchantments.GetLevel(cEnchantments::enchPunch);
+	double KnockbackAmount = 11 + 10 * PunchLevel;
+	a_EntityHit.TakeDamage(dtRangedAttack, GetCreatorUniqueID(), Damage, KnockbackAmount);
 
-	a_EntityHit.TakeDamage(dtRangedAttack, this, Damage, KnockbackAmount);
-	
-	if (IsOnFire() && !a_EntityHit.IsSubmerged() && !a_EntityHit.IsSwimming())
+	if (IsOnFire() && !a_EntityHit.IsInWater())
 	{
 		a_EntityHit.StartBurning(100);
 	}
 
 	// Broadcast successful hit sound
-	GetWorld()->BroadcastSoundEffect("random.successful_hit", GetPosX(), GetPosY(), GetPosZ(), 0.5, (float)(0.75 + ((float)((GetUniqueID() * 23) % 32)) / 64));
-	
+	GetWorld()->BroadcastSoundEffect("entity.arrow.hit_player", GetPosition(), 0.5, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
+
 	Destroy();
 }
 
@@ -162,8 +149,8 @@ void cArrowEntity::CollectedBy(cPlayer & a_Dest)
 			}
 		}
 
-		GetWorld()->BroadcastCollectEntity(*this, a_Dest);
-		GetWorld()->BroadcastSoundEffect("random.pop", GetPosX(), GetPosY(), GetPosZ(), 0.5, (float)(0.75 + ((float)((GetUniqueID() * 23) % 32)) / 64));
+		GetWorld()->BroadcastCollectEntity(*this, a_Dest, 1);
+		GetWorld()->BroadcastSoundEffect("entity.item.pickup", GetPosition(), 0.5, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
 		m_bIsCollected = true;
 	}
 }
@@ -175,8 +162,13 @@ void cArrowEntity::CollectedBy(cPlayer & a_Dest)
 void cArrowEntity::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
 	super::Tick(a_Dt, a_Chunk);
+	if (!IsTicking())
+	{
+		// The base class tick destroyed us
+		return;
+	}
 	m_Timer += a_Dt;
-	
+
 	if (m_bIsCollected)
 	{
 		if (m_Timer > std::chrono::milliseconds(500))
@@ -190,7 +182,7 @@ void cArrowEntity::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 		Destroy();
 		return;
 	}
-	
+
 	if (m_IsInGround)
 	{
 		if (!m_HasTeleported)  // Sent a teleport already, don't do again
@@ -205,24 +197,19 @@ void cArrowEntity::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 				m_HitGroundTimer += a_Dt;
 			}
 		}
-		
-		int RelPosX = m_HitBlockPos.x - a_Chunk.GetPosX() * cChunkDef::Width;
-		int RelPosZ = m_HitBlockPos.z - a_Chunk.GetPosZ() * cChunkDef::Width;
-		cChunk * Chunk = a_Chunk.GetRelNeighborChunkAdjustCoords(RelPosX, RelPosZ);
-		
-		if (Chunk == nullptr)
+
+		auto relPos = a_Chunk.RelativeToAbsolute(m_HitBlockPos);
+		auto chunk = a_Chunk.GetRelNeighborChunkAdjustCoords(relPos);
+
+		if (chunk == nullptr)
 		{
 			// Inside an unloaded chunk, abort
 			return;
 		}
-		
-		if (Chunk->GetBlock(RelPosX, m_HitBlockPos.y, RelPosZ) == E_BLOCK_AIR)  // Block attached to was destroyed?
+
+		if (chunk->GetBlock(relPos) == E_BLOCK_AIR)  // Block attached to was destroyed?
 		{
 			m_IsInGround = false;  // Yes, begin simulating physics again
 		}
 	}
 }
-
-
-
-

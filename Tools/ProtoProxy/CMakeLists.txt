@@ -1,6 +1,4 @@
-
-cmake_minimum_required (VERSION 2.6)
-
+cmake_minimum_required(VERSION 3.0.2)
 project (ProtoProxy)
 
 include(../../SetFlags.cmake)
@@ -10,11 +8,9 @@ set_lib_flags()
 
 
 # Set include paths to the used libraries:
-include_directories("../../lib")
-include_directories("../../lib/polarssl/include")
+include_directories(SYSTEM "../../lib")
+include_directories(SYSTEM "../../lib/mbedtls/include")
 include_directories("../../src")
-
-
 
 function(flatten_files arg1)
 	set(res "")
@@ -25,7 +21,7 @@ function(flatten_files arg1)
 	set(${arg1} "${res}" PARENT_SCOPE)
 endfunction()
 
-include(../../lib/polarssl.cmake)
+include(../../lib/mbedtls.cmake)
 add_subdirectory(../../lib/zlib ${CMAKE_CURRENT_BINARY_DIR}/${CMAKE_FILES_DIRECTORY}/lib/zlib)
 
 set_exe_flags()
@@ -34,24 +30,26 @@ set_exe_flags()
 set(SHARED_SRC
 	../../src/ByteBuffer.cpp
 	../../src/StringUtils.cpp
-	../../src/PolarSSL++/AesCfb128Decryptor.cpp
-	../../src/PolarSSL++/AesCfb128Encryptor.cpp
-	../../src/PolarSSL++/CryptoKey.cpp
-	../../src/PolarSSL++/CtrDrbgContext.cpp
-	../../src/PolarSSL++/EntropyContext.cpp
-	../../src/PolarSSL++/RsaPrivateKey.cpp
+	../../src/UUID.cpp
+	../../src/mbedTLS++/AesCfb128Decryptor.cpp
+	../../src/mbedTLS++/AesCfb128Encryptor.cpp
+	../../src/mbedTLS++/CryptoKey.cpp
+	../../src/mbedTLS++/CtrDrbgContext.cpp
+	../../src/mbedTLS++/EntropyContext.cpp
+	../../src/mbedTLS++/RsaPrivateKey.cpp
 	../../src/LoggerListeners.cpp
 	../../src/Logger.cpp
 )
 set(SHARED_HDR
 	../../src/ByteBuffer.h
 	../../src/StringUtils.h
-	../../src/PolarSSL++/AesCfb128Decryptor.h
-	../../src/PolarSSL++/AesCfb128Encryptor.h
-	../../src/PolarSSL++/CryptoKey.h
-	../../src/PolarSSL++/CtrDrbgContext.h
-	../../src/PolarSSL++/EntropyContext.h
-	../../src/PolarSSL++/RsaPrivateKey.h
+	../../src/UUID.h
+	../../src/mbedTLS++/AesCfb128Decryptor.h
+	../../src/mbedTLS++/AesCfb128Encryptor.h
+	../../src/mbedTLS++/CryptoKey.h
+	../../src/mbedTLS++/CtrDrbgContext.h
+	../../src/mbedTLS++/EntropyContext.h
+	../../src/mbedTLS++/RsaPrivateKey.h
 )
 set(SHARED_OSS_SRC
 	../../src/OSSupport/CriticalSection.cpp
@@ -59,19 +57,17 @@ set(SHARED_OSS_SRC
 	../../src/OSSupport/File.cpp
 	../../src/OSSupport/IsThread.cpp
 	../../src/OSSupport/StackTrace.cpp
+	../../src/OSSupport/WinStackWalker.cpp
 )
+
 set(SHARED_OSS_HDR
 	../../src/OSSupport/CriticalSection.h
 	../../src/OSSupport/Event.h
 	../../src/OSSupport/File.h
 	../../src/OSSupport/IsThread.h
 	../../src/OSSupport/StackTrace.h
+	../../src/OSSupport/WinStackWalker.h
 )
-
-if(WIN32)
-	list (APPEND SHARED_OSS_SRC ../../src/StackWalker.cpp)
-	list (APPEND SHARED_OSS_HDR ../../src/StackWalker.h)
-endif()
 
 flatten_files(SHARED_SRC)
 flatten_files(SHARED_HDR)
@@ -105,5 +101,5 @@ add_executable(ProtoProxy
 	${SHARED_OSS_HDR}
 )
 
-target_link_libraries(ProtoProxy zlib mbedtls)
+target_link_libraries(ProtoProxy zlib mbedtls fmt::fmt)
 

@@ -28,35 +28,40 @@ class cHeiGenCache :
 	public cTerrainHeightGen
 {
 public:
-	cHeiGenCache(cTerrainHeightGenPtr a_HeiGenToCache, int a_CacheSize);
-	~cHeiGenCache();
-	
+	cHeiGenCache(cTerrainHeightGenPtr a_HeiGenToCache, size_t a_CacheSize);
+	virtual ~cHeiGenCache() override = default;
+
 	// cTerrainHeightGen overrides:
-	virtual void GenHeightMap(int a_ChunkX, int a_ChunkZ, cChunkDef::HeightMap & a_HeightMap) override;
-	
+	virtual void GenHeightMap(cChunkCoords a_ChunkCoords, cChunkDef::HeightMap & a_HeightMap) override;
+	virtual HEIGHTTYPE GetHeightAt(int a_BlockX, int a_BlockZ) override;
+
 	/** Retrieves height at the specified point in the cache, returns true if found, false if not found */
 	bool GetHeightAt(int a_ChunkX, int a_ChunkZ, int a_RelX, int a_RelZ, HEIGHTTYPE & a_Height);
-	
+
 protected:
 	struct sCacheData
 	{
-		int m_ChunkX;
-		int m_ChunkZ;
+		cChunkCoords m_Coords;
 		cChunkDef::HeightMap m_HeightMap;
+
+		/** Default constructor: Fill in bogus coords, so that the item is not used until properly calculated. */
+		sCacheData():
+			m_Coords(0x7fffffff, 0x7fffffff)
+		{}
 	} ;
-	
+
 	/** The terrain height generator that is being cached. */
 	cTerrainHeightGenPtr m_HeiGenToCache;
-	
+
 	// To avoid moving large amounts of data for the MRU behavior, we MRU-ize indices to an array of the actual data
-	int          m_CacheSize;
-	int *        m_CacheOrder;  // MRU-ized order, indices into m_CacheData array
-	sCacheData * m_CacheData;   // m_CacheData[m_CacheOrder[0]] is the most recently used
-	
+	size_t                  m_CacheSize;
+	std::vector<size_t>     m_CacheOrder;  // MRU-ized order, indices into m_CacheData array
+	std::vector<sCacheData> m_CacheData;   // m_CacheData[m_CacheOrder[0]] is the most recently used
+
 	// Cache statistics
-	int m_NumHits;
-	int m_NumMisses;
-	int m_TotalChain;  // Number of cache items walked to get to a hit (only added for hits)
+	size_t m_NumHits;
+	size_t m_NumMisses;
+	size_t m_TotalChain;  // Number of cache items walked to get to a hit (only added for hits)
 } ;
 
 
@@ -71,13 +76,14 @@ public:
 	cHeiGenMultiCache(cTerrainHeightGenPtr a_HeightGenToCache, size_t a_SubCacheSize, size_t a_NumSubCaches);
 
 	// cTerrainHeightGen overrides:
-	virtual void GenHeightMap(int a_ChunkX, int a_ChunkZ, cChunkDef::HeightMap & a_HeightMap) override;
-	
+	virtual void GenHeightMap(cChunkCoords a_ChunkCoords, cChunkDef::HeightMap & a_HeightMap) override;
+	virtual HEIGHTTYPE GetHeightAt(int a_BlockX, int a_BlockZ) override;
+
 	/** Retrieves height at the specified point in the cache, returns true if found, false if not found */
 	bool GetHeightAt(int a_ChunkX, int a_ChunkZ, int a_RelX, int a_RelZ, HEIGHTTYPE & a_Height);
 
 protected:
-	typedef SharedPtr<cHeiGenCache> cHeiGenCachePtr;
+	typedef std::shared_ptr<cHeiGenCache> cHeiGenCachePtr;
 	typedef std::vector<cHeiGenCachePtr> cHeiGenCachePtrs;
 
 
@@ -100,13 +106,13 @@ class cHeiGenFlat :
 {
 public:
 	cHeiGenFlat(void) : m_Height(5) {}
-	
+
 protected:
 
-	int m_Height;
+	HEIGHTTYPE m_Height;
 
 	// cTerrainHeightGen overrides:
-	virtual void GenHeightMap(int a_ChunkX, int a_ChunkZ, cChunkDef::HeightMap & a_HeightMap) override;
+	virtual void GenHeightMap(cChunkCoords a_ChunkCoords, cChunkDef::HeightMap & a_HeightMap) override;
 	virtual void InitializeHeightGen(cIniFile & a_IniFile) override;
 } ;
 
@@ -119,7 +125,7 @@ class cHeiGenClassic :
 {
 public:
 	cHeiGenClassic(int a_Seed);
-	
+
 protected:
 
 	int m_Seed;
@@ -127,11 +133,11 @@ protected:
 	float m_HeightFreq1, m_HeightAmp1;
 	float m_HeightFreq2, m_HeightAmp2;
 	float m_HeightFreq3, m_HeightAmp3;
-	
+
 	float GetNoise(float x, float y);
 
 	// cTerrainHeightGen overrides:
-	virtual void GenHeightMap(int a_ChunkX, int a_ChunkZ, cChunkDef::HeightMap & a_HeightMap) override;
+	virtual void GenHeightMap(cChunkCoords a_ChunkCoords, cChunkDef::HeightMap & a_HeightMap) override;
 	virtual void InitializeHeightGen(cIniFile & a_IniFile) override;
 } ;
 
@@ -144,16 +150,16 @@ class cHeiGenMountains :
 {
 public:
 	cHeiGenMountains(int a_Seed);
-	
+
 protected:
 
 	int m_Seed;
 	cRidgedMultiNoise m_MountainNoise;
 	cRidgedMultiNoise m_DitchNoise;
 	cPerlinNoise m_Perlin;
-	
+
 	// cTerrainHeightGen overrides:
-	virtual void GenHeightMap(int a_ChunkX, int a_ChunkZ, cChunkDef::HeightMap & a_HeightMap) override;
+	virtual void GenHeightMap(cChunkCoords a_ChunkCoords, cChunkDef::HeightMap & a_HeightMap) override;
 	virtual void InitializeHeightGen(cIniFile & a_IniFile) override;
 } ;
 
@@ -164,6 +170,8 @@ protected:
 class cHeiGenBiomal :
 	public cTerrainHeightGen
 {
+	typedef cTerrainHeightGen Super;
+
 public:
 	cHeiGenBiomal(int a_Seed, cBiomeGenPtr a_BiomeGen) :
 		m_Noise(a_Seed),
@@ -172,7 +180,11 @@ public:
 	}
 
 	// cTerrainHeightGen overrides:
-	virtual void GenHeightMap(int a_ChunkX, int a_ChunkZ, cChunkDef::HeightMap & a_HeightMap) override;
+	virtual void GenHeightMap(cChunkCoords a_ChunkCoords, cChunkDef::HeightMap & a_HeightMap) override;
+	virtual HEIGHTTYPE GetHeightAt(int a_BlockX, int a_BlockZ) override  // Need to provide this override due to clang's overzealous detection of overloaded virtuals
+	{
+		return Super::GetHeightAt(a_BlockX, a_BlockZ);
+	}
 	virtual void InitializeHeightGen(cIniFile & a_IniFile) override;
 
 protected:
@@ -181,7 +193,7 @@ protected:
 
 	cNoise       m_Noise;
 	cBiomeGenPtr m_BiomeGen;
-	
+
 	// Per-biome terrain generator parameters:
 	struct sGenParam
 	{

@@ -12,9 +12,11 @@
 class cItemMobHeadHandler :
 	public cItemHandler
 {
+	typedef cItemHandler super;
+
 public:
 	cItemMobHeadHandler(int a_ItemType) :
-		cItemHandler(a_ItemType)
+		super(a_ItemType)
 	{
 	}
 
@@ -30,71 +32,60 @@ public:
 		{
 			return true;
 		}
-		AddFaceDirection(a_BlockX, a_BlockY, a_BlockZ, a_BlockFace);
+		auto placedX = a_BlockX, placedY = a_BlockY, placedZ = a_BlockZ;
+		AddFaceDirection(placedY, placedY, placedZ, a_BlockFace);
 
 		// If the placed head is a wither, try to spawn the wither first:
 		if (a_EquippedItem.m_ItemDamage == E_META_HEAD_WITHER)
 		{
-			if (TrySpawnWitherAround(a_World, a_Player, a_BlockX, a_BlockY, a_BlockZ))
+			if (TrySpawnWitherAround(a_World, a_Player, {placedX, placedY, placedZ}))
 			{
 				return true;
 			}
 			// Wither not created, proceed with regular head placement
 		}
 
-		return PlaceRegularHead(a_World, a_Player, a_EquippedItem, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace);
+		cItem itemCopy(a_EquippedItem);  // Make a copy in case this is the player's last head item and OnPlayerPlace removes it
+		if (!super::OnPlayerPlace(a_World, a_Player, a_EquippedItem, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_CursorX, a_CursorY, a_CursorZ))
+		{
+			return false;
+		}
+		RegularHeadPlaced(a_World, a_Player, itemCopy, placedX, placedY, placedZ, a_BlockFace);
+		return true;
 	}
 
 
-	/** Places a regular head block with no mob spawning checking. */
-	bool PlaceRegularHead(
+	/** Called after placing a regular head block with no mob spawning.
+	Adjusts the mob head entity based on the equipped item's data. */
+	void RegularHeadPlaced(
 		cWorld & a_World, cPlayer & a_Player, const cItem & a_EquippedItem,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace
 	)
 	{
-		// Place the block:
-		if (!a_Player.PlaceBlock(a_BlockX, a_BlockY, a_BlockZ, E_BLOCK_HEAD, BlockFaceToBlockMeta(a_BlockFace)))
-		{
-			return false;
-		}
+		auto HeadType = static_cast<eMobHeadType>(a_EquippedItem.m_ItemDamage);
+		auto BlockMeta = static_cast<NIBBLETYPE>(a_BlockFace);
 
 		// Use a callback to set the properties of the mob head block entity:
-		class cCallback : public cBlockEntityCallback
-		{
-			cPlayer & m_Player;
-			eMobHeadType m_HeadType;
-			NIBBLETYPE m_BlockMeta;
-			
-			virtual bool Item(cBlockEntity * a_BlockEntity)
+		a_World.DoWithBlockEntityAt(a_BlockX, a_BlockY, a_BlockZ, [&](cBlockEntity & a_BlockEntity)
 			{
-				if (a_BlockEntity->GetBlockType() != E_BLOCK_HEAD)
+				if (a_BlockEntity.GetBlockType() != E_BLOCK_HEAD)
 				{
 					return false;
 				}
-				cMobHeadEntity * MobHeadEntity = static_cast<cMobHeadEntity *>(a_BlockEntity);
+				auto & MobHeadEntity = static_cast<cMobHeadEntity &>(a_BlockEntity);
 
 				int Rotation = 0;
-				if (m_BlockMeta == 1)
+				if (BlockMeta == 1)
 				{
-					Rotation = FloorC(m_Player.GetYaw() * 16.0f / 360.0f + 0.5f) & 0x0f;
+					Rotation = FloorC(a_Player.GetYaw() * 16.0f / 360.0f + 0.5f) & 0x0f;
 				}
 
-				MobHeadEntity->SetType(m_HeadType);
-				MobHeadEntity->SetRotation(static_cast<eMobHeadRotation>(Rotation));
-				MobHeadEntity->GetWorld()->BroadcastBlockEntity(MobHeadEntity->GetPosX(), MobHeadEntity->GetPosY(), MobHeadEntity->GetPosZ());
+				MobHeadEntity.SetType(HeadType);
+				MobHeadEntity.SetRotation(static_cast<eMobHeadRotation>(Rotation));
+				MobHeadEntity.GetWorld()->BroadcastBlockEntity(MobHeadEntity.GetPos());
 				return false;
 			}
-		
-		public:
-			cCallback (cPlayer & a_CBPlayer, eMobHeadType a_HeadType, NIBBLETYPE a_BlockMeta) :
-				m_Player(a_CBPlayer),
-				m_HeadType(a_HeadType),
-				m_BlockMeta(a_BlockMeta)
-			{}
-		};
-		cCallback Callback(a_Player, static_cast<eMobHeadType>(a_EquippedItem.m_ItemDamage), static_cast<NIBBLETYPE>(a_BlockFace));
-		a_World.DoWithBlockEntityAt(a_BlockX, a_BlockY, a_BlockZ, Callback);
-		return true;
+		);
 	}
 
 
@@ -102,11 +93,11 @@ public:
 	Returns true if the wither was created. */
 	bool TrySpawnWitherAround(
 		cWorld & a_World, cPlayer & a_Player,
-		int a_BlockX, int a_BlockY, int a_BlockZ
+		Vector3i a_BlockPos
 	)
 	{
 		// No wither can be created at Y < 2 - not enough space for the formula:
-		if (a_BlockY < 2)
+		if (a_BlockPos.y < 2)
 		{
 			return false;
 		}
@@ -120,17 +111,17 @@ public:
 			{ 0, 0,  1},
 			{ 0, 0, -1},
 		};
-		for (size_t i = 0; i < ARRAYCOUNT(RelCoords); ++i)
+		for (auto & RelCoord : RelCoords)
 		{
 			if (TrySpawnWitherAt(
 				a_World, a_Player,
-				a_BlockX, a_BlockY, a_BlockZ,
-				RelCoords[i].x, RelCoords[i].z
+				a_BlockPos,
+				RelCoord.x, RelCoord.z
 			))
 			{
 				return true;
 			}
-		}  // for i - Coords[]
+		}  // for i - RelCoords[]
 
 		return false;
 	}
@@ -143,7 +134,7 @@ public:
 	Returns true iff the wither was created successfully. */
 	bool TrySpawnWitherAt(
 		cWorld & a_World, cPlayer & a_Player,
-		int a_PlacedHeadX, int a_PlacedHeadY, int a_PlacedHeadZ,
+		Vector3i a_PlacedHeadPos,
 		int a_OffsetX, int a_OffsetZ
 	)
 	{
@@ -179,12 +170,12 @@ public:
 		return (
 			TrySpawnWitherFromImage(
 				a_World, a_Player, ImageWitherX, ARRAYCOUNT(ImageWitherX),
-				a_PlacedHeadX, a_PlacedHeadY, a_PlacedHeadZ,
+				a_PlacedHeadPos,
 				a_OffsetX, a_OffsetZ
 			) ||
 			TrySpawnWitherFromImage(
 				a_World, a_Player, ImageWitherZ, ARRAYCOUNT(ImageWitherZ),
-				a_PlacedHeadX, a_PlacedHeadY, a_PlacedHeadZ,
+				a_PlacedHeadPos,
 				a_OffsetX, a_OffsetZ
 			)
 		);
@@ -198,7 +189,7 @@ public:
 	Returns true iff the wither was created successfully. */
 	bool TrySpawnWitherFromImage(
 		cWorld & a_World, cPlayer & a_Player, const sSetBlock * a_Image, size_t a_ImageCount,
-		int a_PlacedHeadX, int a_PlacedHeadY, int a_PlacedHeadZ,
+		Vector3i a_PlacedHeadPos,
 		int a_OffsetX, int a_OffsetZ
 	)
 	{
@@ -208,12 +199,12 @@ public:
 		for (size_t i = 0; i < a_ImageCount; i++)
 		{
 			// Get the absolute coords of the image:
-			int BlockX = a_PlacedHeadX + a_OffsetX + a_Image[i].GetX();
-			int BlockY = a_PlacedHeadY + a_Image[i].GetY();
-			int BlockZ = a_PlacedHeadZ + a_OffsetZ + a_Image[i].GetZ();
+			int BlockX = a_PlacedHeadPos.x + a_OffsetX + a_Image[i].GetX();
+			int BlockY = a_PlacedHeadPos.y + a_Image[i].GetY();
+			int BlockZ = a_PlacedHeadPos.z + a_OffsetZ + a_Image[i].GetZ();
 
 			// If the query is for the placed head, short-circuit-evaluate it:
-			if ((BlockX == a_PlacedHeadX) && (BlockY == a_PlacedHeadY) && (BlockZ == a_PlacedHeadZ))
+			if ((BlockX == a_PlacedHeadPos.x) && (BlockY == a_PlacedHeadPos.y) && (BlockZ == a_PlacedHeadPos.z))
 			{
 				if (a_Image[i].m_BlockType != E_BLOCK_HEAD)
 				{
@@ -240,24 +231,16 @@ public:
 			// If it is a mob head, check the correct head type using the block entity:
 			if (BlockType == E_BLOCK_HEAD)
 			{
-				class cHeadCallback: public cBlockEntityCallback
-				{
-					virtual bool Item(cBlockEntity * a_Entity) override
+				bool IsWitherHead = false;
+				a_World.DoWithBlockEntityAt(BlockX, BlockY, BlockZ, [&](cBlockEntity & a_Entity)
 					{
-						ASSERT(a_Entity->GetBlockType() == E_BLOCK_HEAD);
-						cMobHeadEntity * MobHead = static_cast<cMobHeadEntity *>(a_Entity);
-						m_IsWitherHead = (MobHead->GetType() == SKULL_TYPE_WITHER);
+						ASSERT(a_Entity.GetBlockType() == E_BLOCK_HEAD);
+						auto & MobHead = static_cast<cMobHeadEntity &>(a_Entity);
+						IsWitherHead = (MobHead.GetType() == SKULL_TYPE_WITHER);
 						return true;
 					}
-				public:
-					cHeadCallback(void):
-						m_IsWitherHead(false)
-					{
-					}
-					bool m_IsWitherHead;
-				} callback;
-				a_World.DoWithBlockEntityAt(BlockX, BlockY, BlockZ, callback);
-				if (!callback.m_IsWitherHead)
+				);
+				if (!IsWitherHead)
 				{
 					return false;
 				}
@@ -273,36 +256,29 @@ public:
 		}
 
 		// Spawn the wither:
-		int BlockX = a_PlacedHeadX + a_OffsetX;
-		int BlockZ = a_PlacedHeadZ + a_OffsetZ;
-		a_World.SpawnMob(static_cast<double>(BlockX) + 0.5, a_PlacedHeadY - 2, static_cast<double>(BlockZ) + 0.5, mtWither);
-		AwardSpawnWitherAchievement(a_World, BlockX, a_PlacedHeadY - 2, BlockZ);
+		int BlockX = a_PlacedHeadPos.x + a_OffsetX;
+		int BlockZ = a_PlacedHeadPos.z + a_OffsetZ;
+		a_World.SpawnMob(static_cast<double>(BlockX) + 0.5, a_PlacedHeadPos.y - 2, static_cast<double>(BlockZ) + 0.5, mtWither, false);
+		AwardSpawnWitherAchievement(a_World, {BlockX, a_PlacedHeadPos.y - 2, BlockZ});
 		return true;
 	}
 
 
 	/** Awards the achievement to all players close to the specified point. */
-	void AwardSpawnWitherAchievement(cWorld & a_World, int a_BlockX, int a_BlockY, int a_BlockZ)
+	void AwardSpawnWitherAchievement(cWorld & a_World, Vector3i a_BlockPos)
 	{
-		class cPlayerCallback : public cPlayerListCallback
-		{
-			Vector3f m_Pos;
-
-			virtual bool Item(cPlayer * a_Player)
+		Vector3f Pos(a_BlockPos);
+		a_World.ForEachPlayer([=](cPlayer & a_Player)
 			{
 				// If player is close, award achievement:
-				double Dist = (a_Player->GetPosition() - m_Pos).Length();
+				double Dist = (a_Player.GetPosition() - Pos).Length();
 				if (Dist < 50.0)
 				{
-					a_Player->AwardAchievement(achSpawnWither);
+					a_Player.AwardAchievement(achSpawnWither);
 				}
 				return false;
 			}
-
-		public:
-			cPlayerCallback(const Vector3f & a_Pos) : m_Pos(a_Pos) {}
-		} PlayerCallback(Vector3f(static_cast<float>(a_BlockX), static_cast<float>(a_BlockY), static_cast<float>(a_BlockZ)));
-		a_World.ForEachPlayer(PlayerCallback);
+		);
 	}
 
 
@@ -331,7 +307,7 @@ public:
 		return true;
 	}
 
-	
+
 	virtual bool GetPlacementBlockTypeMeta(
 		cWorld * a_World, cPlayer * a_Player,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
@@ -340,7 +316,7 @@ public:
 	) override
 	{
 		a_BlockType = E_BLOCK_HEAD;
-		a_BlockMeta = (NIBBLETYPE)(a_Player->GetEquippedItem().m_ItemDamage & 0x0f);
+		a_BlockMeta = BlockFaceToBlockMeta(a_BlockFace);
 		return true;
 	}
 } ;

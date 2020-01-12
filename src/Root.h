@@ -3,18 +3,19 @@
 
 #include "Protocol/Authenticator.h"
 #include "Protocol/MojangAPI.h"
-#include "HTTPServer/HTTPServer.h"
+#include "HTTP/HTTPServer.h"
 #include "Defines.h"
+#include "FunctionRef.h"
 #include "RankManager.h"
-#include <thread>
+#include "BlockTypeRegistry.h"
 
 
 
 
 
 // fwd:
-class cThread;
 class cMonsterConfig;
+class cBrewingRecipes;
 class cCraftingRecipes;
 class cFurnaceRecipe;
 class cWebAdmin;
@@ -24,9 +25,14 @@ class cWorld;
 class cPlayer;
 class cCommandOutputCallback;
 class cCompositeChat;
+class cSettingsRepositoryInterface;
+class cDeadlockDetect;
+class cUUID;
+class BlockTypePalette;
+class ProtocolPalettes;
 
-typedef cItemCallback<cPlayer> cPlayerListCallback;
-typedef cItemCallback<cWorld>  cWorldListCallback;
+using cPlayerListCallback =  cFunctionRef<bool(cPlayer &)>;
+using cWorldListCallback  =  cFunctionRef<bool(cWorld  &)>;
 
 namespace Json
 {
@@ -37,7 +43,7 @@ namespace Json
 
 
 
-/// The root of the object hierarchy
+/** The root of the object hierarchy */
 // tolua_begin
 class cRoot
 {
@@ -47,44 +53,63 @@ public:
 
 	static bool m_TerminateEventRaised;
 	static bool m_RunAsService;
-	static bool m_ShouldStop;
 
+	/** which ini file to load settings from, default is settings.ini */
+	AString m_SettingsFilename;
 
 	cRoot(void);
 	~cRoot();
 
-	void Start(void);
+	void Start(std::unique_ptr<cSettingsRepositoryInterface> a_OverridesRepo);
+
+	/** Stops the server, as if "/stop" was typed in the console. */
+	void StopServer();
 
 	// tolua_begin
 	cServer * GetServer(void) { return m_Server; }
 	cWorld *  GetDefaultWorld(void);
 
-	/** Returns a pointer to the world specified
-	If no world of that name was currently loaded and a_SearchForFolder was true, it will consult cFile::IsFolder() to see if a world folder of that name exists and if so, initialise a world based on that name
-	*/
-	cWorld * GetWorld(const AString & a_WorldName, bool a_SearchForFolder = false);
+	/** Returns a pointer to the world specified. If no world of that name exists, returns a nullptr. */
+	cWorld * GetWorld(const AString & a_WorldName);
 
-	/** Returns a pointer to a world of specified name - will search loaded worlds first, then create anew if not found
-	The dimension parameter is used to create a world with a specific dimension
-	a_OverworldName should be set for non-overworld dimensions if one wishes that world to link back to an overworld via portals
-	*/
-	cWorld * CreateAndInitializeWorld(const AString & a_WorldName, eDimension a_Dimension = dimOverworld, const AString & a_OverworldName = "");
+	/** Returns the up time of the server in seconds */
+	int GetServerUpTime(void)
+	{
+		return static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - m_StartTime).count());
+	}
 	// tolua_end
-	
-	/// Calls the callback for each world; returns true if the callback didn't abort (return true)
-	bool ForEachWorld(cWorldListCallback & a_Callback);  // >> Exported in ManualBindings <<
-	
-	/// Writes chunkstats, for each world and totals, to the output callback
+
+	/** Calls the callback for each world; returns true if the callback didn't abort (return true) */
+	bool ForEachWorld(cWorldListCallback a_Callback);  // >> Exported in ManualBindings <<
+
+	/** Writes chunkstats, for each world and totals, to the output callback */
 	void LogChunkStats(cCommandOutputCallback & a_Output);
-	
+
 	cMonsterConfig * GetMonsterConfig(void) { return m_MonsterConfig; }
 
 	cCraftingRecipes * GetCraftingRecipes(void) { return m_CraftingRecipes; }  // tolua_export
 	cFurnaceRecipe *   GetFurnaceRecipe  (void) { return m_FurnaceRecipe; }    // Exported in ManualBindings.cpp with quite a different signature
-	
-	/// Returns the number of ticks for how long the item would fuel a furnace. Returns zero if not a fuel
+	cBrewingRecipes *  GetBrewingRecipes (void) { return m_BrewingRecipes.get(); }    // Exported in ManualBindings.cpp
+
+	/** Returns the (read-write) storage for registered block types. */
+	BlockTypeRegistry & GetBlockTypeRegistry() { return m_BlockTypeRegistry; }
+
+	/** Returns the block type palette used for upgrading blocks from pre-1.13 data. */
+	const BlockTypePalette & GetUpgradeBlockTypePalette() const { return *m_UpgradeBlockTypePalette; }
+
+	/** Returns the per-protocol palettes manager. */
+	ProtocolPalettes & GetProtocolPalettes() const { return *m_ProtocolPalettes; }
+
+	/** Returns the number of ticks for how long the item would fuel a furnace. Returns zero if not a fuel */
 	static int GetFurnaceFuelBurnTime(const cItem & a_Fuel);  // tolua_export
-	
+
+	/** Returns the completions for a player name across all worlds. Returns an
+	empty vector if none are found. */
+	AStringVector GetPlayerTabCompletionMultiWorld(const AString & a_Text);
+
+	/** The current time where the startup of the server has been completed */
+	std::chrono::steady_clock::time_point m_StartTime;
+
 	cWebAdmin *        GetWebAdmin       (void) { return m_WebAdmin; }         // tolua_export
 	cPluginManager *   GetPluginManager  (void) { return m_PluginManager; }    // tolua_export
 	cAuthenticator &   GetAuthenticator  (void) { return m_Authenticator; }
@@ -97,47 +122,59 @@ public:
 	"stop" and "restart" commands have special handling.
 	*/
 	void QueueExecuteConsoleCommand(const AString & a_Cmd, cCommandOutputCallback & a_Output);
-	
+
 	/** Queues a console command for execution through the cServer class.
 	The command will be executed in the tick thread
 	The command's output will be sent to console
 	"stop" and "restart" commands have special handling.
 	*/
 	void QueueExecuteConsoleCommand(const AString & a_Cmd);  // tolua_export
-	
-	/// Executes a console command through the cServer class; does special handling for "stop" and "restart".
+
+	/** Executes a console command through the cServer class; does special handling for "stop" and "restart". */
 	void ExecuteConsoleCommand(const AString & a_Cmd, cCommandOutputCallback & a_Output);
-	
-	/// Kicks the user, no matter in what world they are. Used from cAuthenticator
+
+	/** Kicks the user, no matter in what world they are. Used from cAuthenticator */
 	void KickUser(int a_ClientID, const AString & a_Reason);
-	
-	/// Called by cAuthenticator to auth the specified user
-	void AuthenticateUser(int a_ClientID, const AString & a_Name, const AString & a_UUID, const Json::Value & a_Properties);
-	
-	/// Executes commands queued in the command queue
+
+	/** Called by cAuthenticator to auth the specified user */
+	void AuthenticateUser(int a_ClientID, const AString & a_Name, const cUUID & a_UUID, const Json::Value & a_Properties);
+
+	/** Executes commands queued in the command queue */
 	void TickCommands(void);
 
-	/// Returns the number of chunks loaded
+	/** Returns the number of chunks loaded */
 	int GetTotalChunkCount(void);  // tolua_export
-	
-	/// Saves all chunks in all worlds
-	void SaveAllChunks(void);  // tolua_export
-	
-	/// Calls the callback for each player in all worlds
-	bool ForEachPlayer(cPlayerListCallback & a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
 
-	/// Finds a player from a partial or complete player name and calls the callback - case-insensitive
-	bool FindAndDoWithPlayer(const AString & a_PlayerName, cPlayerListCallback & a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
+	/** Saves all chunks in all worlds */
+	void SaveAllChunks(void);  // tolua_export
+
+	/** Sets whether saving chunks is enabled in all worlds (overrides however the worlds were already set) */
+	void SetSavingEnabled(bool a_SavingEnabled);  // tolua_export
+
+	/** Calls the callback for each player in all worlds */
+	bool ForEachPlayer(cPlayerListCallback a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
+
+	/** Finds a player from a partial or complete player name and calls the callback - case-insensitive */
+	bool FindAndDoWithPlayer(const AString & a_PlayerName, cPlayerListCallback a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
 
 	/** Finds the player over his uuid and calls the callback */
-	bool DoWithPlayerByUUID(const AString & a_PlayerUUID, cPlayerListCallback & a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
-	
+	bool DoWithPlayerByUUID(const cUUID & a_PlayerUUID, cPlayerListCallback a_Callback);  // >> EXPORTED IN MANUALBINDINGS <<
+
 	/** Finds the player using it's complete username and calls the callback */
-	bool DoWithPlayer(const AString & a_PlayerName, cPlayerListCallback & a_Callback);
-	
+	bool DoWithPlayer(const AString & a_PlayerName, cPlayerListCallback a_Callback);
+
+	/** Send playerlist of all worlds to player */
+	void SendPlayerLists(cPlayer * a_DestPlayer);
+
+	/** Broadcast playerlist addition through all worlds */
+	void BroadcastPlayerListsAddPlayer(const cPlayer & a_Player, const cClientHandle * a_Exclude = nullptr);
+
+	/** Broadcast playerlist removal through all worlds */
+	void BroadcastPlayerListsRemovePlayer(const cPlayer & a_Player, const cClientHandle * a_Exclude = nullptr);
+
 	// tolua_begin
-	
-	/// Sends a chat message to all connected clients (in all worlds)
+
+	/** Sends a chat message to all connected clients (in all worlds) */
 	void BroadcastChat       (const AString & a_Message, eMessageType a_ChatPrefix = mtCustom);
 	void BroadcastChat       (const cCompositeChat & a_Message);
 	void BroadcastChatDeath  (const AString & a_Message) { BroadcastChat(a_Message, mtDeath); }
@@ -148,18 +185,18 @@ public:
 	void BroadcastChatLeave  (const AString & a_Message) { BroadcastChat(a_Message, mtLeave); }
 	void BroadcastChatSuccess(const AString & a_Message) { BroadcastChat(a_Message, mtSuccess); }
 	void BroadcastChatWarning(const AString & a_Message) { BroadcastChat(a_Message, mtWarning); }
-	
-	/// Returns the textual description of the protocol version: 49 -> "1.4.4". Provided specifically for Lua API
+
+	/** Returns the textual description of the protocol version: 49 -> "1.4.4". Provided specifically for Lua API */
 	static AString GetProtocolVersionTextFromInt(int a_ProtocolVersionNum);
-	
-	/// Returns the amount of virtual RAM used, in KiB. Returns a negative number on error
+
+	/** Returns the amount of virtual RAM used, in KiB. Returns a negative number on error */
 	static int GetVirtualRAMUsage(void);
-	
-	/// Returns the amount of virtual RAM used, in KiB. Returns a negative number on error
+
+	/** Returns the amount of virtual RAM used, in KiB. Returns a negative number on error */
 	static int GetPhysicalRAMUsage(void);
-	
+
 	// tolua_end
-	
+
 private:
 	class cCommand
 	{
@@ -169,27 +206,30 @@ private:
 			m_Output(a_Output)
 		{
 		}
-		
+
 		AString m_Command;
 		cCommandOutputCallback * m_Output;
 	} ;
-	
+
 	typedef std::map<AString, cWorld *> WorldMap;
 	typedef std::vector<cCommand> cCommandQueue;
 
 	cWorld * m_pDefaultWorld;
 	WorldMap m_WorldsByName;
-	
+
 	cCriticalSection m_CSPendingCommands;
 	cCommandQueue    m_PendingCommands;
 
 	std::thread m_InputThread;
+	cEvent m_StopEvent;
+	std::atomic_flag m_InputThreadRunFlag;
 
 	cServer *        m_Server;
 	cMonsterConfig * m_MonsterConfig;
 
 	cCraftingRecipes * m_CraftingRecipes;
 	cFurnaceRecipe *   m_FurnaceRecipe;
+	std::unique_ptr<cBrewingRecipes> m_BrewingRecipes;
 	cWebAdmin *        m_WebAdmin;
 	cPluginManager *   m_PluginManager;
 	cAuthenticator     m_Authenticator;
@@ -197,31 +237,44 @@ private:
 
 	std::unique_ptr<cRankManager> m_RankManager;
 
-	cHTTPServer        m_HTTPServer;
+	cHTTPServer m_HTTPServer;
 
-	bool m_bRestart;
+	/** The storage for all registered block types. */
+	BlockTypeRegistry m_BlockTypeRegistry;
+
+	/** The upgrade palette for pre-1.13 blocks. */
+	std::unique_ptr<BlockTypePalette> m_UpgradeBlockTypePalette;
+
+	/** The per-protocol palettes manager. */
+	std::unique_ptr<ProtocolPalettes> m_ProtocolPalettes;
+
 
 	void LoadGlobalSettings();
 
-	/// Loads the worlds from settings.ini, creates the worldmap
-	void LoadWorlds(cIniFile & IniFile);
-	
-	/// Starts each world's life
-	void StartWorlds(void);
-	
-	/// Stops each world's threads, so that it's safe to unload them
-	void StopWorlds(void);
-	
-	/// Unloads all worlds from memory
+	/** Loads the upgrade palette and the per-protocol palettes.
+	The aProtocolFolder is the path to the folder containing the per-protocol palettes. */
+	void LoadPalettes(const AString & aProtocolFolder);
+
+	/** Loads the worlds from settings.ini, creates the worldmap */
+	void LoadWorlds(cDeadlockDetect & a_dd, cSettingsRepositoryInterface & a_Settings, bool a_IsNewIniFile);
+
+	/** Starts each world's life */
+	void StartWorlds(cDeadlockDetect & a_DeadlockDetect);
+
+	/** Stops each world's threads, so that it's safe to unload them */
+	void StopWorlds(cDeadlockDetect & a_DeadlockDetect);
+
+	/** Unloads all worlds from memory */
 	void UnloadWorlds(void);
-	
-	/// Does the actual work of executing a command
+
+	/** Does the actual work of executing a command */
 	void DoExecuteConsoleCommand(const AString & a_Cmd);
-	
+
 	static cRoot * s_Root;
 
 	static void InputThread(cRoot & a_Params);
 };  // tolua_export
+
 
 
 

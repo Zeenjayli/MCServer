@@ -92,8 +92,8 @@ template <typename TYPE> void LinearUpscale2DArray(
 {
 	// For optimization reasons, we're storing the upscaling ratios in a fixed-size arrays of these sizes
 	// Feel free to enlarge them if needed, but keep in mind that they're on the stack
-	const int MAX_UPSCALE_X = 128;
-	const int MAX_UPSCALE_Y = 128;
+	const int MAX_UPSCALE_X = 129;
+	const int MAX_UPSCALE_Y = 129;
 
 	ASSERT(a_Src != nullptr);
 	ASSERT(a_Dst != nullptr);
@@ -101,24 +101,26 @@ template <typename TYPE> void LinearUpscale2DArray(
 	ASSERT(a_SrcSizeY > 0);
 	ASSERT(a_UpscaleX > 0);
 	ASSERT(a_UpscaleY > 0);
-	ASSERT(a_UpscaleX <= MAX_UPSCALE_X);
-	ASSERT(a_UpscaleY <= MAX_UPSCALE_Y);
+	ASSERT(a_UpscaleX < MAX_UPSCALE_X);
+	ASSERT(a_UpscaleY < MAX_UPSCALE_Y);
 
 	// Pre-calculate the upscaling ratios:
 	TYPE RatioX[MAX_UPSCALE_X];
 	TYPE RatioY[MAX_UPSCALE_Y];
 	for (int x = 0; x <= a_UpscaleX; x++)
 	{
-		RatioX[x] = (TYPE)x / a_UpscaleX;
+		RatioX[x] = static_cast<TYPE>(x) / a_UpscaleX;
 	}
 	for (int y = 0; y <= a_UpscaleY; y++)
 	{
-		RatioY[y] = (TYPE)y / a_UpscaleY;
+		RatioY[y] = static_cast<TYPE>(y) / a_UpscaleY;
 	}
 
 	// Interpolate each XY cell:
 	int DstSizeX = (a_SrcSizeX - 1) * a_UpscaleX + 1;
-	int DstSizeY = (a_SrcSizeY - 1) * a_UpscaleY + 1;
+	#ifdef _DEBUG
+		int DstSizeY = (a_SrcSizeY - 1) * a_UpscaleY + 1;
+	#endif
 	for (int y = 0; y < (a_SrcSizeY - 1); y++)
 	{
 		int DstY = y * a_UpscaleY;
@@ -184,21 +186,23 @@ template <typename TYPE> void LinearUpscale3DArray(
 	TYPE RatioZ[MAX_UPSCALE_Z];
 	for (int x = 0; x <= a_UpscaleX; x++)
 	{
-		RatioX[x] = (TYPE)x / a_UpscaleX;
+		RatioX[x] = static_cast<TYPE>(x) / a_UpscaleX;
 	}
 	for (int y = 0; y <= a_UpscaleY; y++)
 	{
-		RatioY[y] = (TYPE)y / a_UpscaleY;
+		RatioY[y] = static_cast<TYPE>(y) / a_UpscaleY;
 	}
 	for (int z = 0; z <= a_UpscaleZ; z++)
 	{
-		RatioZ[z] = (TYPE)z / a_UpscaleZ;
+		RatioZ[z] = static_cast<TYPE>(z) / a_UpscaleZ;
 	}
 
 	// Interpolate each XYZ cell:
 	int DstSizeX = (a_SrcSizeX - 1) * a_UpscaleX + 1;
 	int DstSizeY = (a_SrcSizeY - 1) * a_UpscaleY + 1;
-	int DstSizeZ = (a_SrcSizeZ - 1) * a_UpscaleZ + 1;
+	#ifdef _DEBUG
+		int DstSizeZ = (a_SrcSizeZ - 1) * a_UpscaleZ + 1;
+	#endif
 	for (int z = 0; z < (a_SrcSizeZ - 1); z++)
 	{
 		int DstZ = z * a_UpscaleZ;

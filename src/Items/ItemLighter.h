@@ -4,7 +4,6 @@
 #include "ItemHandler.h"
 #include "../World.h"
 #include "../Entities/Player.h"
-#include "../Entities/TNTEntity.h"
 
 
 
@@ -30,7 +29,7 @@ public:
 		{
 			return false;
 		}
-		
+
 		if (!a_Player->IsGameModeCreative())
 		{
 			switch (m_ItemType)
@@ -57,9 +56,9 @@ public:
 			case E_BLOCK_TNT:
 			{
 				// Activate the TNT:
-				a_World->BroadcastSoundEffect("game.tnt.primed", (double)a_BlockX, (double)a_BlockY, (double)a_BlockZ, 1.0f, 1.0f);
+				a_World->BroadcastSoundEffect("entity.tnt.primed", Vector3d(a_BlockX, a_BlockY, a_BlockZ), 1.0f, 1.0f);
 				a_World->SetBlock(a_BlockX, a_BlockY, a_BlockZ, E_BLOCK_AIR, 0);
-				a_World->SpawnPrimedTNT(a_BlockX + 0.5, a_BlockY + 0.5, a_BlockZ + 0.5);  // 80 ticks to boom
+				a_World->SpawnPrimedTNT({a_BlockX + 0.5, a_BlockY + 0.5, a_BlockZ + 0.5});  // 80 ticks to boom
 				break;
 			}
 			default:
@@ -73,7 +72,7 @@ public:
 				if (a_World->GetBlock(a_BlockX, a_BlockY, a_BlockZ) == E_BLOCK_AIR)
 				{
 					a_World->SetBlock(a_BlockX, a_BlockY, a_BlockZ, E_BLOCK_FIRE, 0);
-					a_World->BroadcastSoundEffect("fire.ignite", (double)a_BlockX, (double)a_BlockY, (double)a_BlockZ, 1.0F, 1.04F);
+					a_World->BroadcastSoundEffect("item.flintandsteel.use", Vector3d(a_BlockX, a_BlockY, a_BlockZ), 1.0F, 1.04F);
 					break;
 				}
 			}
@@ -82,7 +81,3 @@ public:
 		return false;
 	}
 } ;
-
-
-
-

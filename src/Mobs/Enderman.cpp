@@ -3,15 +3,14 @@
 
 #include "Enderman.h"
 #include "../Entities/Player.h"
-#include "../Tracer.h"
+#include "../LineBlockTracer.h"
 
 
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // cPlayerLookCheck
-class cPlayerLookCheck :
-	public cPlayerListCallback
+class cPlayerLookCheck
 {
 public:
 	cPlayerLookCheck(Vector3d a_EndermanPos, int a_SightDistance) :
@@ -21,50 +20,46 @@ public:
 	{
 	}
 
-	virtual bool Item(cPlayer * a_Player) override
+	bool operator () (cPlayer & a_Player)
 	{
-		// Don't check players who are in creative gamemode
-		if (a_Player->IsGameModeCreative())
-		{
-			return false;
-		}
-		
-		Vector3d Direction = m_EndermanPos - a_Player->GetPosition();
-		
-		// Don't check players who are more then SightDistance (64) blocks away
-		if (Direction.Length() > m_SightDistance)
-		{
-			return false;
-		}
-		
-		// Don't check if the player has a pumpkin on his head
-		if (a_Player->GetEquippedHelmet().m_ItemType == E_BLOCK_PUMPKIN)
+		// Don't check players who cannot be targeted
+		if (!a_Player.CanMobsTarget())
 		{
 			return false;
 		}
 
-		
-		Vector3d LookVector = a_Player->GetLookVector();
-		double dot = Direction.Dot(LookVector);
-		
-		// 0.09 rad ~ 5 degrees
-		// If the player's crosshair is within 5 degrees of the enderman, it counts as looking
-		if (dot <= cos(0.09))
+		// Don't check players who are more than SightDistance (64) blocks away
+		auto Direction = m_EndermanPos - a_Player.GetPosition();
+		if (Direction.Length() > m_SightDistance)
 		{
 			return false;
 		}
-		
-		cTracer LineOfSight(a_Player->GetWorld());
-		if (LineOfSight.Trace(m_EndermanPos, Direction, (int)Direction.Length()))
+
+		// Don't check if the player has a pumpkin on his head
+		if (a_Player.GetEquippedHelmet().m_ItemType == E_BLOCK_PUMPKIN)
+		{
+			return false;
+		}
+
+		// If the player's crosshair is within 5 degrees of the enderman, it counts as looking
+		auto LookVector = a_Player.GetLookVector();
+		auto dot = Direction.Dot(LookVector);
+		if (dot <= cos(0.09))  // 0.09 rad ~ 5 degrees
+		{
+			return false;
+		}
+
+		// TODO: Check if endermen are angered through water in Vanilla
+		if (!cLineBlockTracer::LineOfSightTrace(*a_Player.GetWorld(), m_EndermanPos, a_Player.GetPosition(), cLineBlockTracer::losAirWater))
 		{
 			// No direct line of sight
 			return false;
 		}
 
-		m_Player = a_Player;
+		m_Player = &a_Player;
 		return true;
 	}
-	
+
 	cPlayer * GetPlayer(void) const { return m_Player; }
 
 protected:
@@ -78,10 +73,10 @@ protected:
 
 
 cEnderman::cEnderman(void) :
-	super("Enderman", mtEnderman, "mob.endermen.hit", "mob.endermen.death", 0.5, 2.9),
+	super("Enderman", mtEnderman, "entity.endermen.hurt", "entity.endermen.death", 0.5, 2.9),
 	m_bIsScreaming(false),
-	CarriedBlock(E_BLOCK_AIR),
-	CarriedMeta(0)
+	m_CarriedBlock(E_BLOCK_AIR),
+	m_CarriedMeta(0)
 {
 }
 
@@ -91,7 +86,7 @@ cEnderman::cEnderman(void) :
 
 void cEnderman::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 {
-	int LootingLevel = 0;
+	unsigned int LootingLevel = 0;
 	if (a_Killer != nullptr)
 	{
 		LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);
@@ -102,9 +97,10 @@ void cEnderman::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 
 
 
-void cEnderman::CheckEventSeePlayer()
+
+void cEnderman::CheckEventSeePlayer(cChunk & a_Chunk)
 {
-	if (m_Target != nullptr)
+	if (GetTarget() != nullptr)
 	{
 		return;
 	}
@@ -114,7 +110,7 @@ void cEnderman::CheckEventSeePlayer()
 	{
 		return;
 	}
-	
+
 	ASSERT(Callback.GetPlayer() != nullptr);
 
 	if (!CheckLight())
@@ -124,13 +120,16 @@ void cEnderman::CheckEventSeePlayer()
 		return;
 	}
 
-	if (!Callback.GetPlayer()->IsGameModeCreative())
+	if (!Callback.GetPlayer()->CanMobsTarget())
 	{
-		super::EventSeePlayer(Callback.GetPlayer());
-		m_EMState = CHASING;
-		m_bIsScreaming = true;
-		GetWorld()->BroadcastEntityMetadata(*this);
+		return;
 	}
+
+	// Target the player
+	cMonster::EventSeePlayer(Callback.GetPlayer(), a_Chunk);
+	m_EMState = CHASING;
+	m_bIsScreaming = true;
+	GetWorld()->BroadcastEntityMetadata(*this);
 }
 
 
@@ -145,7 +144,7 @@ void cEnderman::CheckEventLostPlayer(void)
 		EventLosePlayer();
 	}
 }
-	
+
 
 
 
@@ -189,15 +188,20 @@ bool cEnderman::CheckLight()
 void cEnderman::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
 	super::Tick(a_Dt, a_Chunk);
+	if (!IsTicking())
+	{
+		// The base class tick destroyed us
+		return;
+	}
 
-	// TODO take damage in rain
-
-	// Take damage when touching water, drowning damage seems to be most appropriate
-	if (IsSwimming())
+	// Take damage when wet, drowning damage seems to be most appropriate
+	if (
+		cChunkDef::IsValidHeight(POSY_TOINT) &&
+		(GetWorld()->IsWeatherWetAtXYZ(GetPosition().Floor()) || IsInWater())
+	)
 	{
 		EventLosePlayer();
 		TakeDamage(dtDrowning, nullptr, 1, 0);
 		// TODO teleport to a safe location
 	}
-
 }

@@ -18,14 +18,15 @@ class cPlayer;
 class cPickup :
 	public cEntity
 {
-	typedef cEntity super;
-
-public:
 	// tolua_end
+
+	using super = cEntity;
+
+public:  // tolua_export
 
 	CLASS_PROTODEF(cPickup)
 
-	cPickup(double a_PosX, double a_PosY, double a_PosZ, const cItem & a_Item, bool IsPlayerCreated, float a_SpeedX = 0.f, float a_SpeedY = 0.f, float a_SpeedZ = 0.f);
+	cPickup(Vector3d a_Pos, const cItem & a_Item, bool IsPlayerCreated, Vector3f a_Speed = Vector3f(), int a_LifetimeTicks = 6000, bool a_CanCombine = true);
 
 	cItem &       GetItem(void)       {return m_Item; }  // tolua_export
 	const cItem & GetItem(void) const {return m_Item; }
@@ -36,11 +37,27 @@ public:
 
 	virtual void Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk) override;
 
+	virtual bool DoTakeDamage(TakeDamageInfo & a_TDI) override;
+
+	virtual bool DoesPreventBlockPlacement(void) const override { return false; }
+
+	/** Returns whether this pickup is allowed to combine with other similar pickups */
+	bool CanCombine(void) const { return m_bCanCombine; }  // tolua_export
+
+	/** Sets whether this pickup is allowed to combine with other similar pickups */
+	void SetCanCombine(bool a_CanCombine) { m_bCanCombine = a_CanCombine; }  // tolua_export
+
 	/** Returns the number of ticks that this entity has existed */
 	int GetAge(void) const { return std::chrono::duration_cast<cTickTime>(m_Timer).count(); }     // tolua_export
 
 	/** Set the number of ticks that this entity has existed */
 	void SetAge(int a_Age) { m_Timer = cTickTime(a_Age); }  // tolua_export
+
+	/** Returns the number of ticks that this pickup should live for */
+	int GetLifetime(void) const { return std::chrono::duration_cast<cTickTime>(m_Lifetime).count(); }  // tolua_export
+
+	/** Set the number of ticks that this pickup should live for */
+	void SetLifetime(int a_Lifetime) { m_Lifetime = cTickTime(a_Lifetime); }  // tolua_export
 
 	/** Returns true if the pickup has already been collected */
 	bool IsCollected(void) const { return m_bCollected; }  // tolua_export
@@ -58,4 +75,8 @@ private:
 	bool m_bCollected;
 
 	bool m_bIsPlayerCreated;
+
+	bool m_bCanCombine;
+
+	std::chrono::milliseconds m_Lifetime;
 };  // tolua_export

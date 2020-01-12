@@ -29,7 +29,7 @@ public:
 		{
 			return false;
 		}
-		
+
 		AddFaceDirection(a_BlockX, a_BlockY, a_BlockZ, a_BlockFace);
 
 		if (a_BlockFace == BLOCK_FACE_YM)
@@ -40,7 +40,7 @@ public:
 		eMonsterType MonsterType = ItemDamageToMonsterType(a_Item.m_ItemDamage);
 		if (
 			(MonsterType != mtInvalidType) &&  // Valid monster type
-			(a_World->SpawnMob(a_BlockX + 0.5, a_BlockY, a_BlockZ + 0.5, MonsterType) != cEntity::INVALID_ID))  // Spawning succeeded
+			(a_World->SpawnMob(a_BlockX + 0.5, a_BlockY, a_BlockZ + 0.5, MonsterType, false) != cEntity::INVALID_ID))  // Spawning succeeded
 		{
 			if (!a_Player->IsGameModeCreative())
 			{
@@ -49,11 +49,11 @@ public:
 			}
 			return true;
 		}
-		
+
 		return false;
 	}
 
-	
+
 	/** Converts the Spawn egg item damage to the monster type to spawn.
 	Returns mtInvalidType for invalid damage values. */
 	static eMonsterType ItemDamageToMonsterType(short a_ItemDamage)

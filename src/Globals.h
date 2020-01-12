@@ -10,9 +10,6 @@
 
 // Compiler-dependent stuff:
 #if defined(_MSC_VER)
-	// MSVC produces warning C4481 on the override keyword usage, so disable the warning altogether
-	#pragma warning(disable:4481)
-
 	// Disable some warnings that we don't care about:
 	#pragma warning(disable:4100)  // Unreferenced formal parameter
 
@@ -34,27 +31,42 @@
 
 	// Disabled because it's useless:
 	#pragma warning(disable: 4512)  // 'class': assignment operator could not be generated - reported for each class that has a reference-type member
-	
+	#pragma warning(disable: 4351)  // new behavior: elements of array 'member' will be default initialized
+
 	// 2014_01_06 xoft: Disabled this warning because MSVC is stupid and reports it in obviously wrong places
 	// #pragma warning(3 : 4244)  // Conversion from 'type1' to 'type2', possible loss of data
 
 	#define OBSOLETE __declspec(deprecated)
 
-	// No alignment needed in MSVC
-	#define ALIGN_8
-	#define ALIGN_16
-	
-	#define FORMATSTRING(formatIndex, va_argsIndex)
-
-	// MSVC has its own custom version of zu format
-	#define SIZE_T_FMT "%Iu"
-	#define SIZE_T_FMT_PRECISION(x) "%" #x "Iu"
-	#define SIZE_T_FMT_HEX "%Ix"
-	
-	#define NORETURN      __declspec(noreturn)
+	#define NORETURN __declspec(noreturn)
+	#if (_MSC_VER < 1900)  // noexcept support was added in VS 2015
+		#define NOEXCEPT  throw()
+		#define CAN_THROW throw(...)
+	#else
+		#define NOEXCEPT  noexcept
+		#define CAN_THROW noexcept(false)
+	#endif
 
 	// Use non-standard defines in <cmath>
 	#define _USE_MATH_DEFINES
+
+	#ifdef _DEBUG
+		// Override the "new" operator to include file and line specification for debugging memory leaks
+		// Ref.: https://social.msdn.microsoft.com/Forums/en-US/ebc7dd7a-f3c6-49f1-8a60-e381052f21b6/debugging-memory-leaks?forum=vcgeneral#53f0cc89-62fe-45e8-bbf0-56b89f2a1901
+		// This causes MSVC Debug runs to produce a report upon program exit, that contains memory-leaks
+		// together with the file:line information about where the memory was allocated.
+		// Note that this doesn't work with placement-new, which needs to temporarily #undef the macro
+		// (See AllocationPool.h for an example).
+		#ifdef _DEBUG
+			#define _CRTDBG_MAP_ALLOC
+			#include <stdlib.h>
+			#include <crtdbg.h>
+			#define DEBUG_CLIENTBLOCK   new(_CLIENT_BLOCK, __FILE__, __LINE__)
+			#define new DEBUG_CLIENTBLOCK
+			// For some reason this works magically - each "new X" gets replaced as "new(_CLIENT_BLOCK, "file", line) X"
+			// The CRT has a definition for this operator new that stores the debugging info for leak-finding later.
+		#endif
+	#endif
 
 #elif defined(__GNUC__)
 
@@ -68,57 +80,17 @@
 
 	#define OBSOLETE __attribute__((deprecated))
 
-	#define ALIGN_8 __attribute__((aligned(8)))
-	#define ALIGN_16 __attribute__((aligned(16)))
-
-	// Some portability macros :)
-	#define stricmp strcasecmp
-	
-	#define FORMATSTRING(formatIndex, va_argsIndex) __attribute__((format (printf, formatIndex, va_argsIndex)))
-
-	#if defined(_WIN32)
-		// We're compiling on MinGW, which uses an old MSVCRT library that has no support for size_t printfing.
-		// We need direct size formats:
-		#if defined(_WIN64)
-			#define SIZE_T_FMT "%I64u"
-			#define SIZE_T_FMT_PRECISION(x) "%" #x "I64u"
-			#define SIZE_T_FMT_HEX "%I64x"
-		#else
-			#define SIZE_T_FMT "%u"
-			#define SIZE_T_FMT_PRECISION(x) "%" #x "u"
-			#define SIZE_T_FMT_HEX "%x"
-		#endif
-	#else
-		// We're compiling on Linux, so we can use libc's size_t printf format:
-		#define SIZE_T_FMT "%zu"
-		#define SIZE_T_FMT_PRECISION(x) "%" #x "zu"
-		#define SIZE_T_FMT_HEX "%zx"
-	#endif
-	
-	#define NORETURN      __attribute((__noreturn__))
+	#define NORETURN __attribute((__noreturn__))
+	#define NOEXCEPT  noexcept
+	#define CAN_THROW noexcept(false)
 
 #else
 
 	#error "You are using an unsupported compiler, you might need to #define some stuff here for your compiler"
 
-	/*
-	// Copy and uncomment this into another #elif section based on your compiler identification
-
-	// Explicitly mark classes as abstract (no instances can be created)
-	#define abstract
-
-	// Mark virtual methods as overriding (forcing them to have a virtual function of the same signature in the base class)
-	#define override
-
-	// Mark functions as obsolete, so that their usage results in a compile-time warning
-	#define OBSOLETE
-
-	// Mark types / variables for alignment. Do the platforms need it?
-	#define ALIGN_8
-	#define ALIGN_16
-	*/
-
 #endif
+
+
 
 
 #ifdef  _DEBUG
@@ -143,16 +115,13 @@ typedef unsigned short     UInt16;
 typedef unsigned char      UInt8;
 
 typedef unsigned char Byte;
+typedef Byte ColourID;
 
-
-// If you get an error about specialization check the size of integral types
-template <typename T, size_t Size, bool x = sizeof(T) == Size>
-class SizeChecker;
 
 template <typename T, size_t Size>
-class SizeChecker<T, Size, true>
+class SizeChecker
 {
-	T v;
+	static_assert(sizeof(T) == Size, "Check the size of integral types");
 };
 
 template class SizeChecker<Int64, 8>;
@@ -166,10 +135,10 @@ template class SizeChecker<UInt16, 2>;
 template class SizeChecker<UInt8,  1>;
 
 // A macro to disallow the copy constructor and operator = functions
-// This should be used in the private: declarations for any class that shouldn't allow copying itself
+// This should be used in the declarations for any class that shouldn't allow copying itself
 #define DISALLOW_COPY_AND_ASSIGN(TypeName) \
-	TypeName(const TypeName &); \
-	void operator =(const TypeName &)
+	TypeName(const TypeName &) = delete; \
+	TypeName & operator =(const TypeName &) = delete
 
 // A macro that is used to mark unused local variables, to avoid pedantic warnings in gcc / clang / MSVC
 // Note that in MSVC it requires the full type of X to be known
@@ -192,13 +161,12 @@ template class SizeChecker<UInt8,  1>;
 	#define WIN32_LEAN_AND_MEAN
 	#define _WIN32_WINNT _WIN32_WINNT_WS03  // We want to target Windows XP with Service Pack 2 & Windows Server 2003 with Service Pack 1 and higher
 
+	// Windows SDK defines min and max macros, messing up with our std::min and std::max usage
+	#define NOMINMAX
+
 	#include <Windows.h>
 	#include <winsock2.h>
 	#include <Ws2tcpip.h>  // IPv6 stuff
-
-	// Windows SDK defines min and max macros, messing up with our std::min and std::max usage
-	#undef min
-	#undef max
 
 	// Windows SDK defines GetFreeSpace as a constant, probably a Win16 API remnant
 	#ifdef GetFreeSpace
@@ -215,16 +183,15 @@ template class SizeChecker<UInt8,  1>;
 	#include <dirent.h>
 	#include <errno.h>
 	#include <iostream>
-	#include <cstdio>
 	#include <cstring>
 	#include <pthread.h>
 	#include <semaphore.h>
-	#include <errno.h>
 	#include <fcntl.h>
+	#include <unistd.h>
 #endif
 
 #if defined(ANDROID_NDK)
-	#define FILE_IO_PREFIX "/sdcard/mcserver/"
+	#define FILE_IO_PREFIX "/sdcard/Cuberite/"
 #else
 	#define FILE_IO_PREFIX ""
 #endif
@@ -245,6 +212,7 @@ template class SizeChecker<UInt8,  1>;
 
 
 // STL stuff:
+#include <array>
 #include <chrono>
 #include <vector>
 #include <list>
@@ -256,65 +224,59 @@ template class SizeChecker<UInt8,  1>;
 #include <set>
 #include <queue>
 #include <limits>
-#include <chrono>
+#include <random>
+#include <type_traits>
+#include <atomic>
+#include <mutex>
+#include <thread>
+#include <condition_variable>
 
 
 
+
+// Common headers (part 1, without macros):
+#include "fmt/format.h"
+#include "StringUtils.h"
+#include "OSSupport/CriticalSection.h"
+#include "OSSupport/Event.h"
+#include "OSSupport/File.h"
+#include "OSSupport/StackTrace.h"
 
 #ifndef TEST_GLOBALS
-	// Common headers (part 1, without macros):
-	#include "StringUtils.h"
-	#include "OSSupport/CriticalSection.h"
-	#include "OSSupport/Semaphore.h"
-	#include "OSSupport/Event.h"
-	#include "OSSupport/File.h"
-	#include "Logger.h"
-	#include "OSSupport/StackTrace.h"
+
+	#include "LoggerSimple.h"
+
 #else
+	#include "fmt/printf.h"
+
 	// Logging functions
-void inline LOGERROR(const char * a_Format, ...) FORMATSTRING(1, 2);
+	template <typename ... Args>
+	void LOG(const char * a_Format, const Args & ... a_Args)
+	{
+		fmt::printf(a_Format, a_Args...);
+		putchar('\n');
+		fflush(stdout);
+	}
 
-void inline LOGERROR(const char * a_Format, ...)
-{
-	va_list argList;
-	va_start(argList, a_Format);
-	vprintf(a_Format, argList);
-	putchar('\n');
-	va_end(argList);
-}
+	#define LOGERROR   LOG
+	#define LOGWARNING LOG
+	#define LOGD       LOG
+	#define LOGINFO    LOG
+	#define LOGWARN    LOG
 
-void inline LOGWARNING(const char * a_Format, ...) FORMATSTRING(1, 2);
+	template <typename ... Args>
+	void FLOG(const char * a_Format, const Args & ... a_Args)
+	{
+		fmt::print(a_Format, a_Args...);
+		putchar('\n');
+		fflush(stdout);
+	}
 
-void inline LOGWARNING(const char * a_Format, ...)
-{
-	va_list argList;
-	va_start(argList, a_Format);
-	vprintf(a_Format, argList);
-	putchar('\n');
-	va_end(argList);
-}
-
-void inline LOGD(const char * a_Format, ...) FORMATSTRING(1, 2);
-
-void inline LOGD(const char * a_Format, ...)
-{
-	va_list argList;
-	va_start(argList, a_Format);
-	vprintf(a_Format, argList);
-	putchar('\n');
-	va_end(argList);
-}
-
-void inline LOG(const char * a_Format, ...) FORMATSTRING(1, 2);
-
-void inline LOG(const char * a_Format, ...)
-{
-	va_list argList;
-	va_start(argList, a_Format);
-	vprintf(a_Format, argList);
-	putchar('\n');
-	va_end(argList);
-}
+	#define FLOGERROR   FLOG
+	#define FLOGWARNING FLOG
+	#define FLOGD       FLOG
+	#define FLOGINFO    FLOG
+	#define FLOGWARN    FLOG
 
 #endif
 
@@ -324,83 +286,62 @@ void inline LOG(const char * a_Format, ...)
 
 // Common definitions:
 
-/// Evaluates to the number of elements in an array (compile-time!)
+/** Evaluates to the number of elements in an array (compile-time!) */
 #define ARRAYCOUNT(X) (sizeof(X) / sizeof(*(X)))
 
-/// Allows arithmetic expressions like "32 KiB" (but consider using parenthesis around it, "(32 KiB)")
+/** Allows arithmetic expressions like "32 KiB" (but consider using parenthesis around it, "(32 KiB)") */
 #define KiB * 1024
 #define MiB * 1024 * 1024
 
-/// Faster than (int)floorf((float)x / (float)div)
-#define FAST_FLOOR_DIV( x, div) (((x) - (((x) < 0) ? ((div) - 1) : 0)) / (div))
+/** Faster than (int)floorf((float)x / (float)div) */
+#define FAST_FLOOR_DIV(x, div) (((x) - (((x) < 0) ? ((div) - 1) : 0)) / (div))
 
-// Own version of assert() that writes failed assertions to the log for review
+// Own version of ASSERT() that plays nicely with the testing framework
 #ifdef TEST_GLOBALS
 
 	class cAssertFailure
 	{
+		AString mExpression;
+		AString mFileName;
+		int mLineNumber;
+
+	public:
+		cAssertFailure(const AString & aExpression, const AString & aFileName, int aLineNumber):
+			mExpression(aExpression),
+			mFileName(aFileName),
+			mLineNumber(aLineNumber)
+		{
+		}
+
+		const AString & expression() const { return mExpression; }
+		const AString & fileName() const { return mFileName; }
+		int lineNumber() const { return mLineNumber; }
 	};
 
-	#ifdef _WIN32
-		#if (defined(_MSC_VER) && defined(_DEBUG))
-			#define DBG_BREAK _CrtDbgBreak()
-		#else
-			#define DBG_BREAK
-		#endif
-		#define REPORT_ERROR(FMT, ...) \
-		{ \
-			AString msg = Printf(FMT, __VA_ARGS__); \
-			puts(msg.c_str()); \
-			fflush(stdout); \
-			OutputDebugStringA(msg.c_str()); \
-			DBG_BREAK; \
-		}
+	#ifdef _DEBUG
+		#define ASSERT(x) do { if (!(x)) { throw cAssertFailure(#x, __FILE__, __LINE__);} } while (0)
 	#else
-		#define REPORT_ERROR(FMT, ...) \
-		{ \
-			AString msg = Printf(FMT, __VA_ARGS__); \
-			puts(msg.c_str()); \
-			fflush(stdout); \
-		}
+		#define ASSERT(...)
 	#endif
-	#define ASSERT(x) do { if (!(x)) { throw cAssertFailure();} } while (0)
-	#define testassert(x) do { if (!(x)) { REPORT_ERROR("Test failure: %s, file %s, line %d\n", #x, __FILE__, __LINE__); exit(1); } } while (0)
-	#define CheckAsserts(x) do { try {x} catch (cAssertFailure) { break; } REPORT_ERROR("Test failure: assert didn't fire for %s, file %s, line %d\n", #x, __FILE__, __LINE__); exit(1); } while (0)
 
-#else
-	#ifdef  _DEBUG
-		#define ASSERT( x) ( !!(x) || ( LOGERROR("Assertion failed: %s, file %s, line %i", #x, __FILE__, __LINE__), PrintStackTrace(), assert(0), 0))
+	// Pretty much the same as ASSERT() but stays in Release builds
+	#define VERIFY(x) (!!(x) || ( LOGERROR("Verification failed: %s, file %s, line %i", #x, __FILE__, __LINE__), exit(1), 0))
+
+#else  // TEST_GLOBALS
+
+	#ifdef _DEBUG
+		#define ASSERT(x) ( !!(x) || ( LOGERROR("Assertion failed: %s, file %s, line %i", #x, __FILE__, __LINE__), PrintStackTrace(), assert(0), 0))
 	#else
-		#define ASSERT(x) ((void)(x))
+		#define ASSERT(x)
 	#endif
-#endif
 
-// Pretty much the same as ASSERT() but stays in Release builds
-#define VERIFY( x) ( !!(x) || ( LOGERROR("Verification failed: %s, file %s, line %i", #x, __FILE__, __LINE__), PrintStackTrace(), exit(1), 0))
+	// Pretty much the same as ASSERT() but stays in Release builds
+	#define VERIFY(x) (!!(x) || ( LOGERROR("Verification failed: %s, file %s, line %i", #x, __FILE__, __LINE__), PrintStackTrace(), exit(1), 0))
 
-// Same as assert but in all Self test builds
-#ifdef SELF_TEST
-	#define assert_test(x) ( !!(x) || (assert(!#x), exit(1), 0))
-#endif
+#endif  // else TEST_GLOBALS
 
-// Unified ptr types from before C++11. Also no silly undercores.
-#define SharedPtr std::shared_ptr
-#define WeakPtr std::weak_ptr
-#define UniquePtr std::unique_ptr
-
-
-
-
-
-/** A generic interface used mainly in ForEach() functions */
-template <typename Type> class cItemCallback
-{
-public:
-	virtual ~cItemCallback() {}
-	
-	/** Called for each item in the internal list; return true to stop the loop, or false to continue enumerating */
-	virtual bool Item(Type * a_Type) = 0;
-} ;
+/** Use to mark code that should be impossible to reach. */
+#define UNREACHABLE(x) do { FLOGERROR("Hit unreachable code: {0}, file {1}, line {2}", #x, __FILE__, __LINE__); PrintStackTrace(); std::terminate(); } while (false)
 
 
 
@@ -433,10 +374,14 @@ typename std::enable_if<std::is_arithmetic<T>::value, C>::type CeilC(T a_Value)
 
 
 //temporary replacement for std::make_unique until we get c++14
-template <class T, class... Args>
-std::unique_ptr<T> make_unique(Args&&... args)
+
+namespace cpp14
 {
-	return std::unique_ptr<T>(new T(args...));
+	template <class T, class... Args>
+	std::unique_ptr<T> make_unique(Args&&... args)
+	{
+		return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+	}
 }
 
 // a tick is 50 ms
@@ -447,13 +392,18 @@ using cTickTimeLong = std::chrono::duration<Int64,  cTickTime::period>;
 	#define TOLUA_TEMPLATE_BIND(x)
 #endif
 
+#ifdef TOLUA_EXPOSITION
+	#error TOLUA_EXPOSITION should never actually be defined
+#endif
+
 
 
 
 
 // Common headers (part 2, with macros):
-#include "ChunkDef.h"
+#include "Vector3.h"
 #include "BiomeDef.h"
+#include "ChunkDef.h"
 #include "BlockID.h"
 #include "BlockInfo.h"
 

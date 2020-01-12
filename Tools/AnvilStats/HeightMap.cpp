@@ -1,7 +1,7 @@
 
 // HeightMap.cpp
 
-// Implements the cHeightMap class representing a cCallback descendant that draws a B&W map of heights for the world
+// Implements the cHeightMap class representing a cCallback descendant that draws a B & W map of heights for the world
 
 #include "Globals.h"
 #include "HeightMap.h"
@@ -174,6 +174,7 @@ bool cHeightMap::IsGround(BLOCKTYPE a_BlockType)
 	{
 		case E_BLOCK_AIR:
 		case E_BLOCK_BED:
+		case E_BLOCK_BEETROOTS:
 		case E_BLOCK_BREWING_STAND:
 		case E_BLOCK_BROWN_MUSHROOM:
 		case E_BLOCK_CACTUS:
@@ -181,6 +182,8 @@ bool cHeightMap::IsGround(BLOCKTYPE a_BlockType)
 		case E_BLOCK_CARROTS:
 		case E_BLOCK_CAULDRON:
 		case E_BLOCK_CHEST:
+		case E_BLOCK_CHORUS_FLOWER:
+		case E_BLOCK_CHORUS_PLANT:
 		case E_BLOCK_COBBLESTONE_WALL:
 		case E_BLOCK_COBWEB:
 		case E_BLOCK_COCOA_POD:
@@ -189,7 +192,9 @@ bool cHeightMap::IsGround(BLOCKTYPE a_BlockType)
 		case E_BLOCK_DETECTOR_RAIL:
 		case E_BLOCK_DIRT:
 		case E_BLOCK_DRAGON_EGG:
+		case E_BLOCK_END_GATEWAY:
 		case E_BLOCK_END_PORTAL:
+		case E_BLOCK_END_ROD:
 		case E_BLOCK_ENDER_CHEST:
 		case E_BLOCK_FENCE:
 		case E_BLOCK_FENCE_GATE:
@@ -226,6 +231,7 @@ bool cHeightMap::IsGround(BLOCKTYPE a_BlockType)
 		case E_BLOCK_STATIONARY_WATER:
 		case E_BLOCK_STONE_BUTTON:
 		case E_BLOCK_STONE_PRESSURE_PLATE:
+		case E_BLOCK_STRUCTURE_VOID:
 		case E_BLOCK_TALL_GRASS:
 		case E_BLOCK_TORCH:
 		case E_BLOCK_TRIPWIRE:
@@ -247,7 +253,7 @@ bool cHeightMap::IsGround(BLOCKTYPE a_BlockType)
 
 
 
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // cHeightMapFactory:
 
 cHeightMapFactory::~cHeightMapFactory()
@@ -259,7 +265,3 @@ cHeightMapFactory::~cHeightMapFactory()
 	}
 	// TODO: Join all the files into one giant image file
 }
-
-
-
-

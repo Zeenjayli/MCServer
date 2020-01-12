@@ -5,19 +5,24 @@
 #include "../BlockArea.h"
 #include "../Entities/Player.h"
 #include "../UI/BeaconWindow.h"
+#include "../ClientHandle.h"
 
 
 
 
 
-cBeaconEntity::cBeaconEntity(int a_BlockX, int a_BlockY, int a_BlockZ, cWorld * a_World)
-	: super(E_BLOCK_BEACON, a_BlockX, a_BlockY, a_BlockZ, 1, 1, a_World)
-	, m_IsActive(false)
-	, m_BeaconLevel(0)
-	, m_PrimaryEffect(cEntityEffect::effNoEffect)
-	, m_SecondaryEffect(cEntityEffect::effNoEffect)
+cBeaconEntity::cBeaconEntity(BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, Vector3i a_Pos, cWorld * a_World):
+	super(a_BlockType, a_BlockMeta, a_Pos, 1, 1, a_World),
+	m_IsActive(false),
+	m_BeaconLevel(0),
+	m_PrimaryEffect(cEntityEffect::effNoEffect),
+	m_SecondaryEffect(cEntityEffect::effNoEffect)
 {
-	UpdateBeacon();
+	ASSERT(a_BlockType == E_BLOCK_BEACON);
+	if (m_World != nullptr)
+	{
+		UpdateBeacon();
+	}
 }
 
 
@@ -31,7 +36,7 @@ char cBeaconEntity::CalculatePyramidLevel(void)
 	int MaxY = std::max(GetPosY() - 1, 0);
 
 	Area.Read(
-		m_World,
+		*m_World,
 		GetPosX() - 4, GetPosX() + 4,
 		MinY, MaxY,
 		GetPosZ() - 4, GetPosZ() + 4,
@@ -49,14 +54,14 @@ char cBeaconEntity::CalculatePyramidLevel(void)
 			{
 				if (!IsMineralBlock(Area.GetRelBlockType(X, Y, Z)))
 				{
-					return (Layer - 1);
+					return static_cast<char>(Layer - 1);
 				}
 			}
 		}
 		Layer++;
 	}
 
-	return (Layer - 1);
+	return static_cast<char>(Layer - 1);
 }
 
 
@@ -77,7 +82,7 @@ bool cBeaconEntity::IsValidEffect(cEntityEffect::eType a_Effect, char a_BeaconLe
 
 		default:
 		{
-			LOGD("%s: Invalid beacon effect: %d", __FUNCTION__, (int)a_Effect);
+			LOGD("%s: Invalid beacon effect: %d", __FUNCTION__, static_cast<int>(a_Effect));
 			return false;
 		}
 	}
@@ -133,9 +138,9 @@ bool cBeaconEntity::SetSecondaryEffect(cEntityEffect::eType a_Effect)
 
 bool cBeaconEntity::IsBeaconBlocked(void)
 {
-	for (int Y = m_PosY; Y < cChunkDef::Height; ++Y)
+	for (int Y = m_Pos.y; Y < cChunkDef::Height; ++Y)
 	{
-		BLOCKTYPE Block = m_World->GetBlock(m_PosX, Y, m_PosZ);
+		BLOCKTYPE Block = m_World->GetBlock({m_Pos.x, Y, m_Pos.z});
 		if (!cBlockInfo::IsTransparent(Block))
 		{
 			return true;
@@ -182,16 +187,30 @@ void cBeaconEntity::UpdateBeacon(void)
 		m_IsActive = (m_BeaconLevel > 0);
 	}
 
-	if (m_BeaconLevel != OldBeaconLevel)
+	if ((m_BeaconLevel != OldBeaconLevel) && (m_BeaconLevel == 4))
 	{
 		// Send window update:
 		if (GetWindow() != nullptr)
 		{
 			GetWindow()->SetProperty(0, m_BeaconLevel);
 		}
-	}
 
-	// TODO: Add achievement
+		Vector3d BeaconPosition(m_Pos);
+		GetWorld()->ForEachPlayer([=](cPlayer & a_Player)
+			{
+				Vector3d Distance = BeaconPosition - a_Player.GetPosition();
+				if (
+					(std::abs(Distance.y) <= 14) &&
+					(std::abs(Distance.x) <= 20) &&
+					(std::abs(Distance.z) <= 20)
+				)
+				{
+					a_Player.AwardAchievement(eStatistic::achFullBeacon);
+				}
+				return false;
+			}
+		);
+	}
 }
 
 
@@ -212,55 +231,54 @@ void cBeaconEntity::GiveEffects(void)
 		EffectLevel = 1;
 	}
 
-	cEntityEffect::eType SecondaryEffect = cEntityEffect::effNoEffect;
-	if ((m_BeaconLevel >= 4) && (m_PrimaryEffect != m_SecondaryEffect) && (m_SecondaryEffect > 0))
-	{
-		SecondaryEffect = m_SecondaryEffect;
-	}
+	bool HasSecondaryEffect = (m_BeaconLevel >= 4) && (m_PrimaryEffect != m_SecondaryEffect) && (m_SecondaryEffect > 0);
 
-	class cPlayerCallback : public cPlayerListCallback
-	{
-		int m_Radius;
-		int m_PosX, m_PosY, m_PosZ;
-		cEntityEffect::eType m_PrimaryEffect, m_SecondaryEffect;
-		short m_EffectLevel;
-
-		virtual bool Item(cPlayer * a_Player)
+	Vector3d BeaconPosition(m_Pos);
+	GetWorld()->ForEachPlayer([=](cPlayer & a_Player)
 		{
-			Vector3d PlayerPosition = Vector3d(a_Player->GetPosition());
-			if (PlayerPosition.y > (double)m_PosY)
+			auto PlayerPosition = a_Player.GetPosition();
+			if (PlayerPosition.y > BeaconPosition.y)
 			{
-				PlayerPosition.y = (double)m_PosY;
+				PlayerPosition.y = BeaconPosition.y;
 			}
 
 			// TODO: Vanilla minecraft uses an AABB check instead of a radius one
-			Vector3d BeaconPosition = Vector3d(m_PosX, m_PosY, m_PosZ);
-			if ((PlayerPosition - BeaconPosition).Length() <= m_Radius)
+			if ((PlayerPosition - BeaconPosition).Length() <= Radius)
 			{
-				a_Player->AddEntityEffect(m_PrimaryEffect, 180, m_EffectLevel);
+				a_Player.AddEntityEffect(m_PrimaryEffect, 180, EffectLevel);
 
-				if (m_SecondaryEffect != cEntityEffect::effNoEffect)
+				if (HasSecondaryEffect)
 				{
-					a_Player->AddEntityEffect(m_SecondaryEffect, 180, 0);
+					a_Player.AddEntityEffect(m_SecondaryEffect, 180, 0);
 				}
 			}
 			return false;
 		}
+	);
+}
 
-	public:
-		cPlayerCallback(int a_Radius, int a_PosX, int a_PosY, int a_PosZ, cEntityEffect::eType a_PrimaryEffect, cEntityEffect::eType a_SecondaryEffect, short a_EffectLevel):
-			m_Radius(a_Radius),
-			m_PosX(a_PosX),
-			m_PosY(a_PosY),
-			m_PosZ(a_PosZ),
-			m_PrimaryEffect(a_PrimaryEffect),
-			m_SecondaryEffect(a_SecondaryEffect),
-			m_EffectLevel(a_EffectLevel)
-		{
-		}
 
-	} PlayerCallback(Radius, m_PosX, m_PosY, m_PosZ, m_PrimaryEffect, SecondaryEffect, EffectLevel);
-	GetWorld()->ForEachPlayer(PlayerCallback);
+
+
+
+void cBeaconEntity::CopyFrom(const cBlockEntity & a_Src)
+{
+	super::CopyFrom(a_Src);
+	auto & src = static_cast<const cBeaconEntity &>(a_Src);
+	m_BeaconLevel = src.m_BeaconLevel;
+	m_Contents.CopyFrom(src.m_Contents);
+	m_IsActive = src.m_IsActive;
+	m_PrimaryEffect = src.m_PrimaryEffect;
+	m_SecondaryEffect = src.m_SecondaryEffect;
+}
+
+
+
+
+
+void cBeaconEntity::SendTo(cClientHandle & a_Client)
+{
+	a_Client.SendUpdateBlockEntity(*this);
 }
 
 
@@ -282,12 +300,12 @@ bool cBeaconEntity::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 
 
 
-void cBeaconEntity::UsedBy(cPlayer * a_Player)
+bool cBeaconEntity::UsedBy(cPlayer * a_Player)
 {
 	cWindow * Window = GetWindow();
 	if (Window == nullptr)
 	{
-		OpenWindow(new cBeaconWindow(m_PosX, m_PosY, m_PosZ, this));
+		OpenWindow(new cBeaconWindow(this));
 		Window = GetWindow();
 	}
 
@@ -296,18 +314,10 @@ void cBeaconEntity::UsedBy(cPlayer * a_Player)
 		// if (a_Player->GetWindow() != Window)
 		// -> Because mojang doesn't send a 'close window' packet when you click the cancel button in the beacon inventory ...
 		{
-			a_Player->OpenWindow(Window);
+			a_Player->OpenWindow(*Window);
 		}
 	}
-}
-
-
-
-
-
-void cBeaconEntity::SendTo(cClientHandle & a_Client)
-{
-	a_Client.SendUpdateBlockEntity(*this);
+	return true;
 }
 
 

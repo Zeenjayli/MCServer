@@ -11,96 +11,6 @@
 
 
 
-#ifdef SELF_TEST
-
-/** A simple self-test that verifies that the composite chat parser is working properly. */
-class SelfTest_CompositeChat
-{
-public:
-	SelfTest_CompositeChat(void)
-	{
-		fprintf(stderr, "cCompositeChat self test...\n");
-		TestParser1();
-		TestParser2();
-		TestParser3();
-		TestParser4();
-		TestParser5();
-		fprintf(stderr, "cCompositeChat self test finished.\n");
-	}
-	
-	void TestParser1(void)
-	{
-		cCompositeChat Msg;
-		Msg.ParseText("Testing @2color codes and http://links parser");
-		const cCompositeChat::cParts & Parts = Msg.GetParts();
-		assert_test(Parts.size() == 4);
-		assert_test(Parts[0]->m_PartType == cCompositeChat::ptText);
-		assert_test(Parts[1]->m_PartType == cCompositeChat::ptText);
-		assert_test(Parts[2]->m_PartType == cCompositeChat::ptUrl);
-		assert_test(Parts[3]->m_PartType == cCompositeChat::ptText);
-		assert_test(Parts[0]->m_Style == "");
-		assert_test(Parts[1]->m_Style == "@2");
-		assert_test(Parts[2]->m_Style == "@2");
-		assert_test(Parts[3]->m_Style == "@2");
-	}
-	
-	void TestParser2(void)
-	{
-		cCompositeChat Msg;
-		Msg.ParseText("@3Advanced stuff: @5overriding color codes and http://links.with/@4color-in-them handling");
-		const cCompositeChat::cParts & Parts = Msg.GetParts();
-		assert_test(Parts.size() == 4);
-		assert_test(Parts[0]->m_PartType == cCompositeChat::ptText);
-		assert_test(Parts[1]->m_PartType == cCompositeChat::ptText);
-		assert_test(Parts[2]->m_PartType == cCompositeChat::ptUrl);
-		assert_test(Parts[3]->m_PartType == cCompositeChat::ptText);
-		assert_test(Parts[0]->m_Style == "@3");
-		assert_test(Parts[1]->m_Style == "@5");
-		assert_test(Parts[2]->m_Style == "@5");
-		assert_test(Parts[3]->m_Style == "@5");
-	}
-	
-	void TestParser3(void)
-	{
-		cCompositeChat Msg;
-		Msg.ParseText("http://links.starting the text");
-		const cCompositeChat::cParts & Parts = Msg.GetParts();
-		assert_test(Parts.size() == 2);
-		assert_test(Parts[0]->m_PartType == cCompositeChat::ptUrl);
-		assert_test(Parts[1]->m_PartType == cCompositeChat::ptText);
-		assert_test(Parts[0]->m_Style == "");
-		assert_test(Parts[1]->m_Style == "");
-	}
-	
-	void TestParser4(void)
-	{
-		cCompositeChat Msg;
-		Msg.ParseText("links finishing the text: http://some.server");
-		const cCompositeChat::cParts & Parts = Msg.GetParts();
-		assert_test(Parts.size() == 2);
-		assert_test(Parts[0]->m_PartType == cCompositeChat::ptText);
-		assert_test(Parts[1]->m_PartType == cCompositeChat::ptUrl);
-		assert_test(Parts[0]->m_Style == "");
-		assert_test(Parts[1]->m_Style == "");
-	}
-	
-	void TestParser5(void)
-	{
-		cCompositeChat Msg;
-		Msg.ParseText("http://only.links");
-		const cCompositeChat::cParts & Parts = Msg.GetParts();
-		assert_test(Parts.size() == 1);
-		assert_test(Parts[0]->m_PartType == cCompositeChat::ptUrl);
-		assert_test(Parts[0]->m_Style == "");
-	}
-	
-} gTest;
-#endif  // SELF_TEST
-
-
-
-
-
 ////////////////////////////////////////////////////////////////////////////////
 // cCompositeChat:
 
@@ -245,7 +155,7 @@ void cCompositeChat::ParseText(const AString & a_ParseText)
 				}
 				break;
 			}
-			
+
 			case ':':
 			{
 				const char * LinkPrefixes[] =
@@ -272,7 +182,7 @@ void cCompositeChat::ParseText(const AString & a_ParseText)
 							AddTextPart(CurrentText, CurrentStyle);
 							CurrentText.clear();
 						}
-						
+
 						// Go till the last non-whitespace char in the text:
 						for (; i < len; i++)
 						{
@@ -342,7 +252,11 @@ AString cCompositeChat::ExtractText(void) const
 			}
 			case ptUrl:
 			{
-				Msg.append(((cUrlPart *)(*itr))->m_Url);
+				Msg.append((static_cast<cUrlPart *>(*itr))->m_Url);
+				break;
+			}
+			case ptShowAchievement:
+			{
 				break;
 			}
 		}  // switch (PartType)
@@ -368,6 +282,7 @@ cLogger::eLogLevel cCompositeChat::MessageTypeToLogLevel(eMessageType a_MessageT
 		case mtPrivateMessage: return cLogger::llRegular;
 		case mtJoin:           return cLogger::llRegular;
 		case mtLeave:          return cLogger::llRegular;
+		case mtMaxPlusOne: break;
 	}
 	ASSERT(!"Unhandled MessageType");
 	return cLogger::llError;
@@ -416,10 +331,10 @@ AString cCompositeChat::CreateJsonString(bool a_ShouldUseChatPrefixes) const
 				AddChatPartStyle(Part, (*itr)->m_Style);
 				break;
 			}
-			
+
 			case cCompositeChat::ptClientTranslated:
 			{
-				const cCompositeChat::cClientTranslatedPart & p = (const cCompositeChat::cClientTranslatedPart &)**itr;
+				const cCompositeChat::cClientTranslatedPart & p = static_cast<const cCompositeChat::cClientTranslatedPart &>(**itr);
 				Part["translate"] = p.m_Text;
 				Json::Value With;
 				for (AStringVector::const_iterator itrW = p.m_Parameters.begin(), endW = p.m_Parameters.end(); itrW != endW; ++itr)
@@ -433,10 +348,10 @@ AString cCompositeChat::CreateJsonString(bool a_ShouldUseChatPrefixes) const
 				AddChatPartStyle(Part, p.m_Style);
 				break;
 			}
-			
+
 			case cCompositeChat::ptUrl:
 			{
-				const cCompositeChat::cUrlPart & p = (const cCompositeChat::cUrlPart &)**itr;
+				const cCompositeChat::cUrlPart & p = static_cast<const cCompositeChat::cUrlPart &>(**itr);
 				Part["text"] = p.m_Text;
 				Json::Value Url;
 				Url["action"] = "open_url";
@@ -445,11 +360,11 @@ AString cCompositeChat::CreateJsonString(bool a_ShouldUseChatPrefixes) const
 				AddChatPartStyle(Part, p.m_Style);
 				break;
 			}
-			
+
 			case cCompositeChat::ptSuggestCommand:
 			case cCompositeChat::ptRunCommand:
 			{
-				const cCompositeChat::cCommandPart & p = (const cCompositeChat::cCommandPart &)**itr;
+				const cCompositeChat::cCommandPart & p = static_cast<const cCompositeChat::cCommandPart &>(**itr);
 				Part["text"] = p.m_Text;
 				Json::Value Cmd;
 				Cmd["action"] = (p.m_PartType == cCompositeChat::ptRunCommand) ? "run_command" : "suggest_command";
@@ -461,13 +376,13 @@ AString cCompositeChat::CreateJsonString(bool a_ShouldUseChatPrefixes) const
 
 			case cCompositeChat::ptShowAchievement:
 			{
-				const cCompositeChat::cShowAchievementPart & p = (const cCompositeChat::cShowAchievementPart &)**itr;
+				const cCompositeChat::cShowAchievementPart & p = static_cast<const cCompositeChat::cShowAchievementPart &>(**itr);
 				Part["translate"] = "chat.type.achievement";
 
 				Json::Value Ach;
 				Ach["action"] = "show_achievement";
 				Ach["value"] = p.m_Text;
-				
+
 				Json::Value AchColourAndName;
 				AchColourAndName["color"] = "green";
 				AchColourAndName["translate"] = p.m_Text;
@@ -491,7 +406,14 @@ AString cCompositeChat::CreateJsonString(bool a_ShouldUseChatPrefixes) const
 		msg["extra"].append(Part);
 	}  // for itr - Parts[]
 
-	return msg.toStyledString();
+	#if 1
+		// Serialize as machine-readable string (no whitespace):
+		Json::FastWriter writer;
+		return writer.write(msg);
+	#else
+		// Serialize as human-readable string (pretty-printed):
+		return msg.toStyledString();
+	#endif
 }
 
 
@@ -511,35 +433,35 @@ void cCompositeChat::AddChatPartStyle(Json::Value & a_Value, const AString & a_P
 				a_Value["bold"] = Json::Value(true);
 				break;
 			}
-			
+
 			case 'i':
 			{
 				// italic
 				a_Value["italic"] = Json::Value(true);
 				break;
 			}
-			
+
 			case 'u':
 			{
 				// Underlined
 				a_Value["underlined"] = Json::Value(true);
 				break;
 			}
-			
+
 			case 's':
 			{
 				// strikethrough
 				a_Value["strikethrough"] = Json::Value(true);
 				break;
 			}
-			
+
 			case 'o':
 			{
 				// obfuscated
 				a_Value["obfuscated"] = Json::Value(true);
 				break;
 			}
-			
+
 			case '@':
 			{
 				// Color, specified by the next char:

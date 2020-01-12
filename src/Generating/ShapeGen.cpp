@@ -30,11 +30,11 @@ public:
 
 
 	// cTerrainShapeGen overrides:
-	virtual void GenShape(int a_ChunkX, int a_ChunkZ, cChunkDesc::Shape & a_Shape) override
+	virtual void GenShape(cChunkCoords a_ChunkCoords, cChunkDesc::Shape & a_Shape) override
 	{
 		// Generate the heightmap:
 		cChunkDef::HeightMap heightMap;
-		m_HeightGen->GenHeightMap(a_ChunkX, a_ChunkZ, heightMap);
+		m_HeightGen->GenHeightMap(a_ChunkCoords, heightMap);
 
 		// Convert from heightmap to shape:
 		for (int z = 0; z < cChunkDef::Width; z++)
@@ -66,7 +66,7 @@ protected:
 	cTerrainHeightGenPtr m_HeightGen;
 };
 
-typedef SharedPtr<cTerrainHeightToShapeGen> cTerrainHeightToShapeGenPtr;
+typedef std::shared_ptr<cTerrainHeightToShapeGen> cTerrainHeightToShapeGenPtr;
 
 
 
@@ -75,15 +75,20 @@ typedef SharedPtr<cTerrainHeightToShapeGen> cTerrainHeightToShapeGenPtr;
 ////////////////////////////////////////////////////////////////////////////////
 // cTerrainShapeGen:
 
-cTerrainShapeGenPtr cTerrainShapeGen::CreateShapeGen(cIniFile & a_IniFile, cBiomeGenPtr a_BiomeGen, int a_Seed, bool & a_CacheOffByDefault)
+cTerrainShapeGenPtr cTerrainShapeGen::CreateShapeGen(
+	cIniFile & a_IniFile,
+	cBiomeGenPtr a_BiomeGen,
+	int a_Seed,
+	bool & a_CacheOffByDefault
+)
 {
-	AString shapeGenName = a_IniFile.GetValueSet("Generator", "ShapeGen", "");
+	AString shapeGenName = a_IniFile.GetValue("Generator", "ShapeGen");
 	if (shapeGenName.empty())
 	{
 		LOGWARN("[Generator] ShapeGen value not set in world.ini, using \"BiomalNoise3D\".");
 		shapeGenName = "BiomalNoise3D";
 	}
-	
+
 	// If the shapegen is HeightMap, redirect to older HeightMap-based generators:
 	if (NoCaseCompare(shapeGenName, "HeightMap") == 0)
 	{
@@ -133,10 +138,10 @@ cTerrainShapeGenPtr cTerrainShapeGen::CreateShapeGen(cIniFile & a_IniFile, cBiom
 		a_IniFile.SetValue("Generator", "ShapeGen", "BiomalNoise3D");
 		return CreateShapeGen(a_IniFile, a_BiomeGen, a_Seed, a_CacheOffByDefault);
 	}
-	
+
 	// Read the settings:
 	res->InitializeShapeGen(a_IniFile);
-	
+
 	return res;
 }
 

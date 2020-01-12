@@ -2,8 +2,6 @@
 #pragma once
 
 #include "ItemHandler.h"
-#include "../World.h"
-#include "../Entities/Player.h"
 
 
 
@@ -46,15 +44,40 @@ public:
 
 	virtual short GetDurabilityLossByAction(eDurabilityLostAction a_Action) override
 	{
-		switch ((int)a_Action)
+		switch (a_Action)
 		{
-			case dlaAttackEntity: return 1;
-			case dlaBreakBlock:   return 2;
+			case dlaAttackEntity:       return 1;
+			case dlaBreakBlock:         return 2;
+			case dlaBreakBlockInstant:  return 0;
 		}
-		return 0;
+		UNREACHABLE("Unsupported durability loss action");
 	}
+
+
+
+	virtual float GetBlockBreakingStrength(BLOCKTYPE a_Block) override
+	{
+		if (a_Block == E_BLOCK_COBWEB)
+		{
+			return 15.0f;
+		}
+		else
+		{
+			if (
+				IsBlockMaterialPlants(a_Block) ||
+				IsBlockMaterialVine(a_Block)   ||
+				IsBlockMaterialCoral(a_Block)  ||
+				IsBlockMaterialLeaves(a_Block) ||
+				IsBlockMaterialGourd(a_Block)
+			)
+			{
+				return 1.5f;
+			}
+			else
+			{
+				return 1.0f;
+			}
+		}
+	}
+
 } ;
-
-
-
-

@@ -1,13 +1,9 @@
-cmake_minimum_required (VERSION 2.6)
-project (MCServer)
-
-include_directories ("${PROJECT_SOURCE_DIR}/../")
-include_directories (".")
 
 SET (SRCS
 	Bindings.cpp
 	DeprecatedBindings.cpp
 	LuaChunkStay.cpp
+	LuaJson.cpp
 	LuaNameLookup.cpp
 	LuaServerHandle.cpp
 	LuaState.cpp
@@ -16,13 +12,13 @@ SET (SRCS
 	LuaUDPEndpoint.cpp
 	LuaWindow.cpp
 	ManualBindings.cpp
+	ManualBindings_BlockArea.cpp
 	ManualBindings_Network.cpp
 	ManualBindings_RankManager.cpp
 	ManualBindings_World.cpp
 	Plugin.cpp
 	PluginLua.cpp
 	PluginManager.cpp
-	WebPlugin.cpp
 )
 
 SET (HDRS
@@ -30,6 +26,7 @@ SET (HDRS
 	DeprecatedBindings.h
 	LuaChunkStay.h
 	LuaFunctions.h
+	LuaJson.h
 	LuaNameLookup.h
 	LuaServerHandle.h
 	LuaState.h
@@ -42,7 +39,6 @@ SET (HDRS
 	Plugin.h
 	PluginLua.h
 	PluginManager.h
-	WebPlugin.h
 	tolua++.h
 )
 
@@ -56,7 +52,6 @@ set (BINDING_OUTPUTS
 )
 
 set(BINDING_DEPENDENCIES
-	tolua
 	../Bindings/AllToLua.pkg
 	../Bindings/BindingsProcessor.lua
 	../Bindings/LuaFunctions.h
@@ -64,42 +59,53 @@ set(BINDING_DEPENDENCIES
 	../Bindings/Plugin.h
 	../Bindings/PluginLua.h
 	../Bindings/PluginManager.h
-	../Bindings/WebPlugin.h
 	../BiomeDef.h
 	../BlockArea.h
 	../BlockEntities/BeaconEntity.h
+	../BlockEntities/BedEntity.h
 	../BlockEntities/BlockEntity.h
 	../BlockEntities/BlockEntityWithItems.h
+	../BlockEntities/BrewingstandEntity.h
 	../BlockEntities/ChestEntity.h
+	../BlockEntities/CommandBlockEntity.h
 	../BlockEntities/DispenserEntity.h
 	../BlockEntities/DropSpenserEntity.h
 	../BlockEntities/DropperEntity.h
 	../BlockEntities/FurnaceEntity.h
 	../BlockEntities/HopperEntity.h
 	../BlockEntities/JukeboxEntity.h
+	../BlockEntities/MobSpawnerEntity.h
 	../BlockEntities/NoteEntity.h
 	../BlockEntities/SignEntity.h
 	../BlockEntities/MobHeadEntity.h
 	../BlockEntities/FlowerPotEntity.h
 	../BlockID.h
+	../BlockInfo.h
 	../BoundingBox.h
 	../ChatColor.h
 	../ChunkDef.h
 	../ClientHandle.h
+	../Color.h
+	../CompositeChat.h
 	../CraftingRecipes.h
 	../Cuboid.h
 	../Defines.h
+	../EffectID.h
 	../Enchantments.h
+	../Entities/Boat.h
 	../Entities/ArrowEntity.h
 	../Entities/Entity.h
+	../Entities/ExpOrb.h
 	../Entities/EntityEffect.h
 	../Entities/ExpBottleEntity.h
+	../Entities/FallingBlock.h
 	../Entities/FireChargeEntity.h
 	../Entities/FireworkEntity.h
 	../Entities/Floater.h
 	../Entities/GhastFireballEntity.h
 	../Entities/HangingEntity.h
 	../Entities/ItemFrame.h
+	../Entities/LeashKnot.h
 	../Entities/Pawn.h
 	../Entities/Player.h
 	../Entities/Painting.h
@@ -112,41 +118,56 @@ set(BINDING_DEPENDENCIES
 	../Entities/TNTEntity.h
 	../Entities/WitherSkullEntity.h
 	../Generating/ChunkDesc.h
+	../IniFile.h
 	../Inventory.h
 	../Item.h
 	../ItemGrid.h
+	../Map.h
+	../MapManager.h
 	../Mobs/Monster.h
+	../Mobs/MonsterTypes.h
 	../OSSupport/File.h
+	../Protocol/MojangAPI.h
 	../Root.h
+	../Scoreboard.h
 	../Server.h
+	../Statistics.h
 	../StringUtils.h
 	../Tracer.h
 	../UI/Window.h
+	../UUID.h
 	../Vector3.h
 	../WebAdmin.h
 	../World.h
 )
 
 if (NOT MSVC)
-	ADD_CUSTOM_COMMAND(
-		# add any new generated bindings here
-		OUTPUT ${BINDING_OUTPUTS}
-
-		# Regenerate bindings:
-		COMMAND tolua -L BindingsProcessor.lua -o Bindings.cpp -H Bindings.h AllToLua.pkg
-		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-
-		# add any new generation dependencies here
-		DEPENDS ${BINDING_DEPENDENCIES}
-	)
+	if (USE_SYSTEM_LUA)
+		ADD_CUSTOM_COMMAND(
+			OUTPUT ${BINDING_OUTPUTS}
+			COMMAND lua BindingsProcessor.lua
+			WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+			DEPENDS ${BINDING_DEPENDENCIES}
+		)
+	else()
+		ADD_CUSTOM_COMMAND(
+			OUTPUT ${BINDING_OUTPUTS}
+			COMMAND luaexe BindingsProcessor.lua
+			WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+			DEPENDS ${BINDING_DEPENDENCIES} luaexe
+		)
+	endif()
 endif ()
 
 set_source_files_properties(${BINDING_OUTPUTS} PROPERTIES GENERATED TRUE)
 
 set_source_files_properties(${CMAKE_SOURCE_DIR}/src/Bindings/Bindings.cpp PROPERTIES COMPILE_FLAGS -Wno-error)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+	set_source_files_properties(Bindings.cpp PROPERTIES COMPILE_FLAGS "-Wno-old-style-cast -Wno-missing-prototypes")
+endif()
+
 if(NOT MSVC)
 	add_library(Bindings ${SRCS} ${HDRS})
-
-	target_link_libraries(Bindings lua sqlite tolualib mbedtls)
+	target_link_libraries(Bindings fmt::fmt lua sqlite tolualib mbedtls HTTPServer)
 endif()

@@ -36,6 +36,10 @@ void cMobProximityCounter::CollectMob(cEntity & a_Monster, cChunk & a_Chunk, dou
 
 }
 
+
+
+
+
 void cMobProximityCounter::convertMaps()
 {
 	for (tMonsterToDistance::const_iterator itr = m_MonsterToDistance.begin(); itr != m_MonsterToDistance.end(); ++itr)
@@ -43,6 +47,10 @@ void cMobProximityCounter::convertMaps()
 		m_DistanceToMonster.insert(tDistanceToMonster::value_type(itr->second.m_Distance, sMonsterAndChunk(*itr->first, *itr->second.m_Chunk)));
 	}
 }
+
+
+
+
 
 cMobProximityCounter::sIterablePair cMobProximityCounter::getMobWithinThosesDistances(double a_DistanceMin, double a_DistanceMax)
 {
@@ -63,7 +71,7 @@ cMobProximityCounter::sIterablePair cMobProximityCounter::getMobWithinThosesDist
 	{
 		if (toReturn.m_Begin == m_DistanceToMonster.end())
 		{
-			if ((a_DistanceMin == 1) || (itr->first > a_DistanceMin))
+			if ((a_DistanceMin == 1.0) || (itr->first > a_DistanceMin))
 			{
 				toReturn.m_Begin = itr;  // This is the first one with distance > a_DistanceMin;
 			}
@@ -71,7 +79,7 @@ cMobProximityCounter::sIterablePair cMobProximityCounter::getMobWithinThosesDist
 
 		if (toReturn.m_Begin != m_DistanceToMonster.end())
 		{
-			if ((a_DistanceMax != 1) && (itr->first > a_DistanceMax))
+			if ((a_DistanceMax != 1.0) && (itr->first > a_DistanceMax))
 			{
 				toReturn.m_End = itr;  // This is just after the last one with distance < a_DistanceMax
 				// Note : if we are not going through this, it's ok, toReturn.m_End will be end();

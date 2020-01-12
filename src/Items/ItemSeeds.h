@@ -33,16 +33,17 @@ public:
 		}
 	}
 
-	virtual FoodInfo GetFoodInfo(void) override
+	virtual FoodInfo GetFoodInfo(const cItem * a_Item) override
 	{
+		UNUSED(a_Item);
 		switch (m_ItemType)
 		{
-			case E_ITEM_CARROT: return FoodInfo(3, 4.8);
+			case E_ITEM_CARROT: return FoodInfo(3, 3.6);
 			case E_ITEM_POTATO: return FoodInfo(1, 0.6);
 			default:            return FoodInfo(0, 0);
 		}
 	}
-	
+
 	virtual bool GetPlacementBlockTypeMeta(
 		cWorld * a_World, cPlayer * a_Player,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
@@ -55,7 +56,7 @@ public:
 			// Only allow planting seeds from the top side of the block
 			return false;
 		}
-		
+
 		// Only allow placement on farmland
 		int X = a_BlockX;
 		int Y = a_BlockY;
@@ -65,16 +66,17 @@ public:
 		{
 			return false;
 		}
-		
+
 		a_BlockMeta = 0;
 		switch (m_ItemType)
 		{
-			case E_ITEM_CARROT:        a_BlockType = E_BLOCK_CARROTS;      return true;
-			case E_ITEM_MELON_SEEDS:   a_BlockType = E_BLOCK_MELON_STEM;   return true;
-			case E_ITEM_POTATO:        a_BlockType = E_BLOCK_POTATOES;     return true;
-			case E_ITEM_PUMPKIN_SEEDS: a_BlockType = E_BLOCK_PUMPKIN_STEM; return true;
-			case E_ITEM_SEEDS:         a_BlockType = E_BLOCK_CROPS;        return true;
-			default:                   a_BlockType = E_BLOCK_AIR;          return true;
+			case E_ITEM_BEETROOT_SEEDS: a_BlockType = E_BLOCK_BEETROOTS;    return true;
+			case E_ITEM_CARROT:         a_BlockType = E_BLOCK_CARROTS;      return true;
+			case E_ITEM_MELON_SEEDS:    a_BlockType = E_BLOCK_MELON_STEM;   return true;
+			case E_ITEM_POTATO:         a_BlockType = E_BLOCK_POTATOES;     return true;
+			case E_ITEM_PUMPKIN_SEEDS:  a_BlockType = E_BLOCK_PUMPKIN_STEM; return true;
+			case E_ITEM_SEEDS:          a_BlockType = E_BLOCK_CROPS;        return true;
+			default:                    a_BlockType = E_BLOCK_AIR;          return true;
 		}
 	}
 } ;

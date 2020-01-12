@@ -20,22 +20,22 @@
 class cWitherSkullEntity :
 public cProjectileEntity
 {
-	typedef cProjectileEntity super;
-	
-public:
-	
 	// tolua_end
-	
+
+	using super = cProjectileEntity;
+
+public:  // tolua_export
+
 	CLASS_PROTODEF(cWitherSkullEntity)
-	
-	cWitherSkullEntity(cEntity * a_Creator, double a_X, double a_Y, double a_Z, const Vector3d & a_Speed);
-	
+
+	cWitherSkullEntity(cEntity * a_Creator, Vector3d a_Pos, Vector3d a_Speed);
+
 protected:
-	
+
 	// cProjectileEntity overrides:
-	virtual void OnHitSolidBlock(const Vector3d & a_HitPos, eBlockFace a_HitFace) override;
-	virtual void OnHitEntity(cEntity & a_EntityHit, const Vector3d & a_HitPos) override;
-	
+	virtual void OnHitSolidBlock(Vector3d a_HitPos, eBlockFace a_HitFace) override;
+	virtual void OnHitEntity(cEntity & a_EntityHit, Vector3d a_HitPos) override;
+
 } ;  // tolua_export
 
 

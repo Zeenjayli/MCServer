@@ -12,56 +12,60 @@
 
 #include <cstring>
 
-
-#include "ChunkDef.h"
-
 #include "AllocationPool.h"
 
 
 
-#if __cplusplus < 201103L
-// auto_ptr style interface for memory management
-#else
-// unique_ptr style interface for memory management
-#endif
-
 class cChunkData
 {
-private:
+public:
 
-	static const size_t SectionHeight = 16;
+	static const int SectionHeight = 16;
 	static const size_t NumSections = (cChunkDef::Height / SectionHeight);
 	static const size_t SectionBlockCount = SectionHeight * cChunkDef::Width * cChunkDef::Width;
 
-public:
+	struct sChunkSection
+	{
+		BLOCKTYPE  m_BlockTypes[SectionBlockCount];
+		NIBBLETYPE m_BlockMetas[SectionBlockCount / 2];
+		NIBBLETYPE m_BlockLight[SectionBlockCount / 2];
+		NIBBLETYPE m_BlockSkyLight[SectionBlockCount / 2];
+	};
 
-	struct sChunkSection;
-
-	cChunkData(cAllocationPool<cChunkData::sChunkSection> & a_Pool);
+	cChunkData(cAllocationPool<sChunkSection> & a_Pool);
+	cChunkData(cChunkData && a_Other);
 	~cChunkData();
-	
-	#if __cplusplus < 201103L
-		// auto_ptr style interface for memory management
-		cChunkData(const cChunkData & a_Other);
-		cChunkData & operator =(const cChunkData & a_Other);
-	#else
-		// unique_ptr style interface for memory management
-		cChunkData(cChunkData && a_Other);
-		cChunkData & operator =(cChunkData && a_ther);
-	#endif
 
-	BLOCKTYPE GetBlock(int a_X, int a_Y, int a_Z) const;
-	void SetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_Block);
+	cChunkData & operator = (cChunkData && a_Other)
+	{
+		Assign(std::move(a_Other));
+		return *this;
+	}
 
-	NIBBLETYPE GetMeta(int a_RelX, int a_RelY, int a_RelZ) const;
-	bool SetMeta(int a_RelX, int a_RelY, int a_RelZ, NIBBLETYPE a_Nibble);
-	
-	NIBBLETYPE GetBlockLight(int a_RelX, int a_RelY, int a_RelZ) const;
-	
-	NIBBLETYPE GetSkyLight(int a_RelX, int a_RelY, int a_RelZ) const;
-	
-	/** Creates a (deep) copy of self. */
-	cChunkData Copy(void) const;
+	/** Copy assign from another cChunkData */
+	void Assign(const cChunkData & a_Other);
+
+	/** Move assign from another cChunkData */
+	void Assign(cChunkData && a_Other);
+
+	BLOCKTYPE GetBlock(Vector3i a_RelPos) const;
+	void SetBlock(Vector3i a_RelPos, BLOCKTYPE a_Block);
+
+	NIBBLETYPE GetMeta(Vector3i a_RelPos) const;
+	bool SetMeta(Vector3i a_RelPos, NIBBLETYPE a_Nibble);
+
+	NIBBLETYPE GetBlockLight(Vector3i a_RelPos) const;
+
+	NIBBLETYPE GetSkyLight(Vector3i a_RelPos) const;
+
+	/** Return a pointer to the chunk section or nullptr if all air */
+	const sChunkSection * GetSection(size_t a_SectionNum) const;
+
+	/** Returns a bitmask of chunk sections which are currently stored. */
+	UInt16 GetSectionBitmask() const;
+
+	/** Clears all data */
+	void Clear();
 
 	/** Copies the blocktype data into the specified flat array.
 	Optionally, only a part of the data is copied, as specified by the a_Idx and a_Length parameters. */
@@ -75,7 +79,19 @@ public:
 
 	/** Copies the skylight data into the specified flat array. */
 	void CopySkyLight  (NIBBLETYPE * a_Dest) const;
-	
+
+	/** Fills the chunk with the specified block. */
+	void FillBlockTypes(BLOCKTYPE a_Value);
+
+	/** Fills the chunk with the specified meta value. */
+	void FillMetas     (NIBBLETYPE a_Value);
+
+	/** Fills the chunk with the specified block light. */
+	void FillBlockLight(NIBBLETYPE a_Value);
+
+	/** Fills the chunk with the specified sky light. */
+	void FillSkyLight  (NIBBLETYPE a_Value);
+
 	/** Copies the blocktype data from the specified flat array into the internal representation.
 	Allocates sections that are needed for the operation.
 	Requires that a_Src is a valid pointer. */
@@ -96,31 +112,22 @@ public:
 	Allows a_Src to be nullptr, in which case it doesn't do anything. */
 	void SetSkyLight(const NIBBLETYPE * a_Src);
 
-	struct sChunkSection
-	{
-		BLOCKTYPE  m_BlockTypes   [SectionHeight * 16 * 16]    ;
-		NIBBLETYPE m_BlockMetas   [SectionHeight * 16 * 16 / 2];
-		NIBBLETYPE m_BlockLight   [SectionHeight * 16 * 16 / 2];
-		NIBBLETYPE m_BlockSkyLight[SectionHeight * 16 * 16 / 2];
-	};
-	
+	/** Returns the number of sections present (i.e. non-air). */
+	UInt32 NumPresentSections() const;
+
 private:
-	#if __cplusplus < 201103L
-	// auto_ptr style interface for memory management
-	mutable bool m_IsOwner;
-	#endif
 
 	sChunkSection * m_Sections[NumSections];
 
-	cAllocationPool<cChunkData::sChunkSection> & m_Pool;
-	
+	cAllocationPool<sChunkSection> & m_Pool;
+
 	/** Allocates a new section. Entry-point to custom allocators. */
 	sChunkSection * Allocate(void);
 
 	/** Frees the specified section, previously allocated using Allocate().
 	Note that a_Section may be nullptr. */
 	void Free(sChunkSection * a_Section);
-	
+
 	/** Sets the data in the specified section to their default values. */
 	void ZeroSection(sChunkSection * a_Section) const;
 

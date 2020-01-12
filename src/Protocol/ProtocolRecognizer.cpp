@@ -7,14 +7,19 @@
 #include "Globals.h"
 
 #include "ProtocolRecognizer.h"
-#include "Protocol17x.h"
-#include "Protocol18x.h"
+#include "Protocol_1_8.h"
+#include "Protocol_1_9.h"
+#include "Protocol_1_10.h"
+#include "Protocol_1_11.h"
+#include "Protocol_1_12.h"
+#include "Protocol_1_13.h"
+#include "Packetizer.h"
 #include "../ClientHandle.h"
 #include "../Root.h"
 #include "../Server.h"
 #include "../World.h"
 #include "../ChatColor.h"
-#include "Bindings/PluginManager.h"
+#include "../Bindings/PluginManager.h"
 
 
 
@@ -22,19 +27,9 @@
 
 cProtocolRecognizer::cProtocolRecognizer(cClientHandle * a_Client) :
 	super(a_Client),
-	m_Protocol(nullptr),
-	m_Buffer(8192)     // We need a larger buffer to support BungeeCord - it sends one huge packet at the start
+	m_Buffer(8192),  // We need a larger buffer to support BungeeCord - it sends one huge packet at the start
+	m_InPingForUnrecognizedVersion(false)
 {
-}
-
-
-
-
-
-cProtocolRecognizer::~cProtocolRecognizer()
-{
-	delete m_Protocol;
-	m_Protocol = nullptr;
 }
 
 
@@ -45,9 +40,17 @@ AString cProtocolRecognizer::GetVersionTextFromInt(int a_ProtocolVersion)
 {
 	switch (a_ProtocolVersion)
 	{
-		case PROTO_VERSION_1_7_2: return "1.7.2";
-		case PROTO_VERSION_1_7_6: return "1.7.6";
-		case PROTO_VERSION_1_8_0: return "1.8";
+		case PROTO_VERSION_1_8_0:   return "1.8";
+		case PROTO_VERSION_1_9_0:   return "1.9";
+		case PROTO_VERSION_1_9_1:   return "1.9.1";
+		case PROTO_VERSION_1_9_2:   return "1.9.2";
+		case PROTO_VERSION_1_9_4:   return "1.9.4";
+		case PROTO_VERSION_1_10_0:  return "1.10";
+		case PROTO_VERSION_1_11_0:  return "1.11";
+		case PROTO_VERSION_1_11_1:  return "1.11.1";
+		case PROTO_VERSION_1_12:    return "1.12";
+		case PROTO_VERSION_1_12_1:  return "1.12.1";
+		case PROTO_VERSION_1_13:    return "1.13";
 	}
 	ASSERT(!"Unknown protocol version");
 	return Printf("Unknown protocol (%d)", a_ProtocolVersion);
@@ -59,28 +62,70 @@ AString cProtocolRecognizer::GetVersionTextFromInt(int a_ProtocolVersion)
 
 void cProtocolRecognizer::DataReceived(const char * a_Data, size_t a_Size)
 {
-	if (m_Protocol == nullptr)
+	if (m_Protocol != nullptr)
 	{
-		if (!m_Buffer.Write(a_Data, a_Size))
+		// Protocol was already recognized, send to the handler:
+		m_Protocol->DataReceived(a_Data, a_Size);
+		return;
+	}
+
+	if (!m_Buffer.Write(a_Data, a_Size))
+	{
+		m_Client->Kick("Unsupported protocol version");
+		return;
+	}
+
+	if (!m_InPingForUnrecognizedVersion)
+	{
+		if (TryRecognizeProtocol())
 		{
-			m_Client->Kick("Unsupported protocol version");
+			// The protocol has just been recognized, dump the whole m_Buffer contents into it for parsing:
+			AString Dump;
+			m_Buffer.ResetRead();
+			m_Buffer.ReadAll(Dump);
+			m_Protocol->DataReceived(Dump.data(), Dump.size());
 			return;
 		}
-		
-		if (!TryRecognizeProtocol())
+		else
 		{
-			return;
+			m_Buffer.ResetRead();
+		}
+	}
+
+	if (!m_InPingForUnrecognizedVersion)
+	{
+		return;
+	}
+
+	// Handle server list ping packets
+	for (;;)
+	{
+		UInt32 PacketLen;
+		UInt32 PacketID;
+		if (
+			!m_Buffer.ReadVarInt32(PacketLen) ||
+			!m_Buffer.CanReadBytes(PacketLen) ||
+			!m_Buffer.ReadVarInt32(PacketID)
+		)
+		{
+			// Not enough data
+			m_Buffer.ResetRead();
+			break;
 		}
 
-		// The protocol has just been recognized, dump the whole m_Buffer contents into it for parsing:
-		AString Dump;
-		m_Buffer.ResetRead();
-		m_Buffer.ReadAll(Dump);
-		m_Protocol->DataReceived(Dump.data(), Dump.size());
-	}
-	else
-	{
-		m_Protocol->DataReceived(a_Data, a_Size);
+		if ((PacketID == 0x00) && (PacketLen == 1))  // Request packet
+		{
+			HandlePacketStatusRequest();
+		}
+		else if ((PacketID == 0x01) && (PacketLen == 9))  // Ping packet
+		{
+			HandlePacketStatusPing();
+		}
+		else
+		{
+			m_Client->Kick("Server list ping failed, unrecognized packet");
+			return;
+		}
 	}
 }
 
@@ -88,7 +133,7 @@ void cProtocolRecognizer::DataReceived(const char * a_Data, size_t a_Size)
 
 
 
-void cProtocolRecognizer::SendAttachEntity(const cEntity & a_Entity, const cEntity * a_Vehicle)
+void cProtocolRecognizer::SendAttachEntity(const cEntity & a_Entity, const cEntity & a_Vehicle)
 {
 	ASSERT(m_Protocol != nullptr);
 	m_Protocol->SendAttachEntity(a_Entity, a_Vehicle);
@@ -138,20 +183,40 @@ void cProtocolRecognizer::SendBlockChanges(int a_ChunkX, int a_ChunkZ, const sSe
 
 
 
-void cProtocolRecognizer::SendChat(const AString & a_Message)
+void cProtocolRecognizer::SendCameraSetTo(const cEntity & a_Entity)
 {
 	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChat(a_Message);
+	m_Protocol->SendCameraSetTo(a_Entity);
 }
 
 
 
 
 
-void cProtocolRecognizer::SendChat(const cCompositeChat & a_Message)
+void cProtocolRecognizer::SendChat(const AString & a_Message, eChatType a_Type)
 {
 	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChat(a_Message);
+	m_Protocol->SendChat(a_Message, a_Type);
+}
+
+
+
+
+
+void cProtocolRecognizer::SendChat(const cCompositeChat & a_Message, eChatType a_Type, bool a_ShouldUseChatPrefixes)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendChat(a_Message, a_Type, a_ShouldUseChatPrefixes);
+}
+
+
+
+
+
+void cProtocolRecognizer::SendChatRaw(const AString & a_MessageRaw, eChatType a_Type)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendChatRaw(a_MessageRaw, a_Type);
 }
 
 
@@ -168,10 +233,10 @@ void cProtocolRecognizer::SendChunkData(int a_ChunkX, int a_ChunkZ, cChunkDataSe
 
 
 
-void cProtocolRecognizer::SendCollectEntity(const cEntity & a_Entity, const cPlayer & a_Player)
+void cProtocolRecognizer::SendCollectEntity(const cEntity & a_Entity, const cPlayer & a_Player, int a_Count)
 {
 	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendCollectEntity(a_Entity, a_Player);
+	m_Protocol->SendCollectEntity(a_Entity, a_Player, a_Count);
 }
 
 
@@ -188,6 +253,16 @@ void cProtocolRecognizer::SendDestroyEntity(const cEntity & a_Entity)
 
 
 
+void cProtocolRecognizer::SendDetachEntity(const cEntity & a_Entity, const cEntity & a_PreviousVehicle)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendDetachEntity(a_Entity, a_PreviousVehicle);
+}
+
+
+
+
+
 void cProtocolRecognizer::SendDisconnect(const AString & a_Reason)
 {
 	if (m_Protocol != nullptr)
@@ -196,16 +271,12 @@ void cProtocolRecognizer::SendDisconnect(const AString & a_Reason)
 	}
 	else
 	{
-		// This is used when the client sends a server-ping, respond with the default packet:
-		static const int Packet = 0xff;  // PACKET_DISCONNECT
-		SendData((const char *)&Packet, 1);  // WriteByte()
-
-		AString UTF16 = UTF8ToRawBEUTF16(a_Reason.c_str(), a_Reason.length());
-		static const u_short Size = htons((u_short)(UTF16.size() / 2));
-		SendData((const char *)&Size, 2);      // WriteShort()
-		SendData(UTF16.data(), UTF16.size());  // WriteString()
+		AString Message = Printf("{\"text\":\"%s\"}", EscapeString(a_Reason).c_str());
+		cPacketizer Pkt(*this, pktDisconnectDuringLogin);
+		Pkt.WriteString(Message);
 	}
 }
+
 
 
 
@@ -220,7 +291,7 @@ void cProtocolRecognizer::SendEditSign(int a_BlockX, int a_BlockY, int a_BlockZ)
 
 
 
-void cProtocolRecognizer::SendEntityEffect(const cEntity & a_Entity, int a_EffectID, int a_Amplifier, short a_Duration)
+void cProtocolRecognizer::SendEntityEffect(const cEntity & a_Entity, int a_EffectID, int a_Amplifier, int a_Duration)
 {
 	ASSERT(m_Protocol != nullptr);
 	m_Protocol->SendEntityEffect(a_Entity, a_EffectID, a_Amplifier, a_Duration);
@@ -350,6 +421,26 @@ void cProtocolRecognizer::SendHealth(void)
 
 
 
+void cProtocolRecognizer::SendHeldItemChange(int a_ItemIndex)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendHeldItemChange(a_ItemIndex);
+}
+
+
+
+
+
+void cProtocolRecognizer::SendHideTitle(void)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendHideTitle();
+}
+
+
+
+
+
 void cProtocolRecognizer::SendWindowProperty(const cWindow & a_Window, short a_Property, short a_Value)
 {
 	ASSERT(m_Protocol != nullptr);
@@ -370,10 +461,30 @@ void cProtocolRecognizer::SendInventorySlot(char a_WindowID, short a_SlotNum, co
 
 
 
-void cProtocolRecognizer::SendKeepAlive(int a_PingID)
+void cProtocolRecognizer::SendKeepAlive(UInt32 a_PingID)
 {
 	ASSERT(m_Protocol != nullptr);
 	m_Protocol->SendKeepAlive(a_PingID);
+}
+
+
+
+
+
+void cProtocolRecognizer::SendLeashEntity(const cEntity & a_Entity, const cEntity & a_EntityLeashedTo)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendLeashEntity(a_Entity, a_EntityLeashedTo);
+}
+
+
+
+
+
+void cProtocolRecognizer::SendUnleashEntity(const cEntity & a_Entity)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendUnleashEntity(a_Entity);
 }
 
 
@@ -400,30 +511,10 @@ void cProtocolRecognizer::SendLoginSuccess(void)
 
 
 
-void cProtocolRecognizer::SendMapColumn(int a_ID, int a_X, int a_Y, const Byte * a_Colors, unsigned int a_Length, unsigned int m_Scale)
+void cProtocolRecognizer::SendMapData(const cMap & a_Map, int a_DataStartX, int a_DataStartY)
 {
 	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendMapColumn(a_ID, a_X, a_Y, a_Colors, a_Length, m_Scale);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendMapDecorators(int a_ID, const cMapDecoratorList & a_Decorators, unsigned int m_Scale)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendMapDecorators(a_ID, a_Decorators, m_Scale);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendMapInfo(int a_ID, unsigned int a_Scale)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendMapInfo(a_ID, a_Scale);
+	m_Protocol->SendMapData(a_Map, a_DataStartX, a_DataStartY);
 }
 
 
@@ -599,10 +690,20 @@ void cProtocolRecognizer::SendRemoveEntityEffect(const cEntity & a_Entity, int a
 
 
 
-void cProtocolRecognizer::SendRespawn(eDimension a_Dimension, bool a_ShouldIgnoreDimensionChecks)
+void cProtocolRecognizer::SendResetTitle(void)
 {
 	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendRespawn(a_Dimension, a_ShouldIgnoreDimensionChecks);
+	m_Protocol->SendResetTitle();
+}
+
+
+
+
+
+void cProtocolRecognizer::SendRespawn(eDimension a_Dimension)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendRespawn(a_Dimension);
 }
 
 
@@ -659,6 +760,46 @@ void cProtocolRecognizer::SendDisplayObjective(const AString & a_Objective, cSco
 
 
 
+void cProtocolRecognizer::SendSetSubTitle(const cCompositeChat & a_SubTitle)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendSetSubTitle(a_SubTitle);
+}
+
+
+
+
+
+void cProtocolRecognizer::SendSetRawSubTitle(const AString & a_SubTitle)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendSetRawSubTitle(a_SubTitle);
+}
+
+
+
+
+
+void cProtocolRecognizer::SendSetTitle(const cCompositeChat & a_Title)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendSetTitle(a_Title);
+}
+
+
+
+
+
+void cProtocolRecognizer::SendSetRawTitle(const AString & a_Title)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendSetRawTitle(a_Title);
+}
+
+
+
+
+
 void cProtocolRecognizer::SendSoundEffect(const AString & a_SoundName, double a_X, double a_Y, double a_Z, float a_Volume, float a_Pitch)
 {
 	ASSERT(m_Protocol != nullptr);
@@ -669,7 +810,7 @@ void cProtocolRecognizer::SendSoundEffect(const AString & a_SoundName, double a_
 
 
 
-void cProtocolRecognizer::SendSoundParticleEffect(int a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data)
+void cProtocolRecognizer::SendSoundParticleEffect(const EffectID a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data)
 {
 	ASSERT(m_Protocol != nullptr);
 	m_Protocol->SendSoundParticleEffect(a_EffectID, a_SrcX, a_SrcY, a_SrcZ, a_Data);
@@ -753,6 +894,16 @@ void cProtocolRecognizer::SendThunderbolt(int a_BlockX, int a_BlockY, int a_Bloc
 {
 	ASSERT(m_Protocol != nullptr);
 	m_Protocol->SendThunderbolt(a_BlockX, a_BlockY, a_BlockZ);
+}
+
+
+
+
+
+void cProtocolRecognizer::SendTitleTimes(int a_FadeInTicks, int a_DisplayTicks, int a_FadeOutTicks)
+{
+	ASSERT(m_Protocol != nullptr);
+	m_Protocol->SendTitleTimes(a_FadeInTicks, a_DisplayTicks, a_FadeOutTicks);
 }
 
 
@@ -871,24 +1022,40 @@ void cProtocolRecognizer::SendData(const char * a_Data, size_t a_Size)
 
 bool cProtocolRecognizer::TryRecognizeProtocol(void)
 {
-	// NOTE: If a new protocol is added or an old one is removed, adjust MCS_CLIENT_VERSIONS and
-	// MCS_PROTOCOL_VERSIONS macros in the header file, as well as PROTO_VERSION_LATEST macro
+	// NOTE: If a new protocol is added or an old one is removed, adjust MCS_CLIENT_VERSIONS and MCS_PROTOCOL_VERSIONS macros in the header file
 
 	// Lengthed protocol, try if it has the entire initial handshake packet:
 	UInt32 PacketLen;
-	UInt32 ReadSoFar = (UInt32)m_Buffer.GetReadableSpace();
+	UInt32 ReadSoFar = static_cast<UInt32>(m_Buffer.GetReadableSpace());
 	if (!m_Buffer.ReadVarInt(PacketLen))
 	{
 		// Not enough bytes for the packet length, keep waiting
 		return false;
 	}
-	ReadSoFar -= (UInt32)m_Buffer.GetReadableSpace();
+	ReadSoFar -= static_cast<UInt32>(m_Buffer.GetReadableSpace());
 	if (!m_Buffer.CanReadBytes(PacketLen))
 	{
 		// Not enough bytes for the packet, keep waiting
 		return false;
 	}
-	return TryRecognizeLengthedProtocol(PacketLen - ReadSoFar);
+	if (!TryRecognizeLengthedProtocol(PacketLen - ReadSoFar))
+	{
+		return false;
+	}
+
+	// The protocol has been recognized, initialize it:
+	ASSERT(m_Protocol != nullptr);
+	try
+	{
+		m_Protocol->Initialize(*m_Client);
+	}
+	catch (const std::exception & exc)
+	{
+		m_Client->Kick(exc.what());
+		m_Protocol.reset();
+		return false;
+	}
+	return true;
 }
 
 
@@ -917,91 +1084,203 @@ bool cProtocolRecognizer::TryRecognizeLengthedProtocol(UInt32 a_PacketLengthRema
 		return false;
 	}
 	m_Client->SetProtocolVersion(ProtocolVersion);
+	AString ServerAddress;
+	UInt16 ServerPort;
+	UInt32 NextState;
+	if (!m_Buffer.ReadVarUTF8String(ServerAddress))
+	{
+		return false;
+	}
+	if (!m_Buffer.ReadBEUInt16(ServerPort))
+	{
+		return false;
+	}
+	if (!m_Buffer.ReadVarInt(NextState))
+	{
+		return false;
+	}
+	m_Buffer.CommitRead();
 	switch (ProtocolVersion)
 	{
-		case PROTO_VERSION_1_7_2:
-		{
-			AString ServerAddress;
-			UInt16 ServerPort;
-			UInt32 NextState;
-			if (!m_Buffer.ReadVarUTF8String(ServerAddress))
-			{
-				break;
-			}
-			if (!m_Buffer.ReadBEUInt16(ServerPort))
-			{
-				break;
-			}
-			if (!m_Buffer.ReadVarInt(NextState))
-			{
-				break;
-			}
-			m_Buffer.CommitRead();
-			m_Protocol = new cProtocol172(m_Client, ServerAddress, ServerPort, NextState);
-			return true;
-		}
-		case PROTO_VERSION_1_7_6:
-		{
-			AString ServerAddress;
-			UInt16 ServerPort;
-			UInt32 NextState;
-			if (!m_Buffer.ReadVarUTF8String(ServerAddress))
-			{
-				break;
-			}
-			if (!m_Buffer.ReadBEUInt16(ServerPort))
-			{
-				break;
-			}
-			if (!m_Buffer.ReadVarInt(NextState))
-			{
-				break;
-			}
-			m_Buffer.CommitRead();
-			m_Protocol = new cProtocol176(m_Client, ServerAddress, ServerPort, NextState);
-			return true;
-		}
 		case PROTO_VERSION_1_8_0:
 		{
-			AString ServerAddress;
-			UInt16 ServerPort;
-			UInt32 NextState;
-			if (!m_Buffer.ReadVarUTF8String(ServerAddress))
-			{
-				break;
-			}
-			if (!m_Buffer.ReadBEUInt16(ServerPort))
-			{
-				break;
-			}
-			if (!m_Buffer.ReadVarInt(NextState))
-			{
-				break;
-			}
 			m_Buffer.CommitRead();
-			m_Protocol = new cProtocol180(m_Client, ServerAddress, ServerPort, NextState);
+			m_Protocol.reset(new cProtocol_1_8_0(m_Client, ServerAddress, ServerPort, NextState));
 			return true;
 		}
+		case PROTO_VERSION_1_9_0:
+		{
+			m_Protocol.reset(new cProtocol_1_9_0(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_9_1:
+		{
+			m_Protocol.reset(new cProtocol_1_9_1(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_9_2:
+		{
+			m_Protocol.reset(new cProtocol_1_9_2(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_9_4:
+		{
+			m_Protocol.reset(new cProtocol_1_9_4(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_10_0:
+		{
+			m_Protocol.reset(new cProtocol_1_10_0(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_11_0:
+		{
+			m_Protocol.reset(new cProtocol_1_11_0(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_11_1:
+		{
+			m_Protocol.reset(new cProtocol_1_11_1(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_12:
+		{
+			m_Protocol.reset(new cProtocol_1_12(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_12_1:
+		{
+			m_Protocol.reset(new cProtocol_1_12_1(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_12_2:
+		{
+			m_Protocol.reset(new cProtocol_1_12_2(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		case PROTO_VERSION_1_13:
+		{
+			m_Protocol.reset(new cProtocol_1_13(m_Client, ServerAddress, ServerPort, NextState));
+			return true;
+		}
+		default:
+		{
+			LOGD("Client \"%s\" uses an unsupported protocol (lengthed, version %u (0x%x))",
+				m_Client->GetIPString().c_str(), ProtocolVersion, ProtocolVersion
+			);
+			if (NextState != 1)
+			{
+				m_Client->Kick(Printf("Unsupported protocol version %u, please use one of these versions:\n" MCS_CLIENT_VERSIONS, ProtocolVersion));
+				return false;
+			}
+			else
+			{
+				m_InPingForUnrecognizedVersion = true;
+			}
+			return false;
+		}
 	}
-	LOGINFO("Client \"%s\" uses an unsupported protocol (lengthed, version %u (0x%x))",
-		m_Client->GetIPString().c_str(), ProtocolVersion, ProtocolVersion
-	);
-	m_Client->Kick("Unsupported protocol version");
-	return false;
 }
+
 
 
 
 
 void cProtocolRecognizer::SendPacket(cPacketizer & a_Pkt)
 {
-	// This function should never be called - it needs to exists so that cProtocolRecognizer can be instantiated,
-	// but the actual sending is done by the internal m_Protocol itself.
-	LOGWARNING("%s: This function shouldn't ever be called.", __FUNCTION__);
-	ASSERT(!"Function not to be called");
+	// Writes out the packet normally.
+	UInt32 PacketLen = static_cast<UInt32>(m_OutPacketBuffer.GetUsedSpace());
+	AString PacketData, CompressedPacket;
+	m_OutPacketBuffer.ReadAll(PacketData);
+	m_OutPacketBuffer.CommitRead();
+
+	// Compression doesn't apply to this state, send raw data:
+	m_OutPacketLenBuffer.WriteVarInt32(PacketLen);
+	AString LengthData;
+	m_OutPacketLenBuffer.ReadAll(LengthData);
+	SendData(LengthData.data(), LengthData.size());
+
+	// Send the packet's payload
+	m_OutPacketLenBuffer.CommitRead();
+	SendData(PacketData.data(), PacketData.size());
 }
 
 
 
 
 
+UInt32 cProtocolRecognizer::GetPacketID(ePacketType a_PacketType)
+{
+	switch (a_PacketType)
+	{
+		case pktDisconnectDuringLogin: return 0x00;
+		case pktStatusResponse:        return 0x00;
+		case pktPingResponse:          return 0x01;
+		default:
+		{
+			ASSERT(!"cProtocolRecognizer::GetPacketID() called for an unhandled packet");
+			return 0;
+		}
+	}
+}
+
+
+
+
+
+void cProtocolRecognizer::HandlePacketStatusRequest(void)
+{
+	cServer * Server = cRoot::Get()->GetServer();
+	AString ServerDescription = Server->GetDescription();
+	auto NumPlayers = static_cast<signed>(Server->GetNumPlayers());
+	auto MaxPlayers = static_cast<signed>(Server->GetMaxPlayers());
+	AString Favicon = Server->GetFaviconData();
+	cRoot::Get()->GetPluginManager()->CallHookServerPing(*m_Client, ServerDescription, NumPlayers, MaxPlayers, Favicon);
+
+	// Version:
+	Json::Value Version;
+	Version["name"] = "Cuberite " MCS_CLIENT_VERSIONS;
+	Version["protocol"] = MCS_LATEST_PROTOCOL_VERSION;
+
+	// Players:
+	Json::Value Players;
+	Players["online"] = NumPlayers;
+	Players["max"] = MaxPlayers;
+	// TODO: Add "sample"
+
+	// Description:
+	Json::Value Description;
+	Description["text"] = ServerDescription.c_str();
+
+	// Create the response:
+	Json::Value ResponseValue;
+	ResponseValue["version"] = Version;
+	ResponseValue["players"] = Players;
+	ResponseValue["description"] = Description;
+	if (!Favicon.empty())
+	{
+		ResponseValue["favicon"] = Printf("data:image/png;base64,%s", Favicon.c_str());
+	}
+
+	Json::FastWriter Writer;
+	AString Response = Writer.write(ResponseValue);
+
+	cPacketizer Pkt(*this, pktStatusResponse);
+	Pkt.WriteString(Response);
+}
+
+
+
+
+
+void cProtocolRecognizer::HandlePacketStatusPing()
+{
+	Int64 Timestamp;
+	if (!m_Buffer.ReadBEInt64(Timestamp))
+	{
+		return;
+	}
+
+	cPacketizer Pkt(*this, pktPingResponse);
+	Pkt.WriteBEInt64(Timestamp);
+}

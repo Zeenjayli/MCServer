@@ -1,10 +1,3 @@
-// ItemBoat.h
-
-// Declares the various boat ItemHandlers
-
-
-
-
 
 #pragma once
 
@@ -19,15 +12,15 @@ class cItemBoatHandler :
 	public cItemHandler
 {
 	typedef cItemHandler super;
-	
+
 public:
 	cItemBoatHandler(int a_ItemType) :
 		super(a_ItemType)
 	{
 	}
-	
-	
-	
+
+
+
 	virtual bool OnItemUse(
 		cWorld * a_World, cPlayer * a_Player, cBlockPluginInterface & a_PluginInterface, const cItem & a_Item,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace
@@ -44,13 +37,13 @@ public:
 		public:
 			Vector3d m_Pos;
 			bool m_HasFound;
-			
+
 			cCallbacks(void) :
 				m_HasFound(false)
 			{
 			}
-			
-			virtual bool OnNextBlock(int a_CBBlockX, int a_CBBlockY, int a_CBBlockZ, BLOCKTYPE a_CBBlockType, NIBBLETYPE a_CBBlockMeta, char a_CBEntryFace) override
+
+			virtual bool OnNextBlock(int a_CBBlockX, int a_CBBlockY, int a_CBBlockZ, BLOCKTYPE a_CBBlockType, NIBBLETYPE a_CBBlockMeta, eBlockFace a_CBEntryFace) override
 			{
 				if (a_CBBlockType != E_BLOCK_AIR)
 				{
@@ -61,7 +54,7 @@ public:
 				return false;
 			}
 		} Callbacks;
-		
+
 		cLineBlockTracer Tracer(*a_World, Callbacks);
 		Vector3d Start(a_Player->GetEyePosition() + a_Player->GetLookVector());
 		Vector3d End(a_Player->GetEyePosition() + a_Player->GetLookVector() * 5);
@@ -73,17 +66,39 @@ public:
 			return false;
 		}
 
-		double x = Callbacks.m_Pos.x;
-		double y = Callbacks.m_Pos.y;
-		double z = Callbacks.m_Pos.z;
-		
-		cBoat * Boat = new cBoat(x + 0.5, y + 1, z + 0.5);
-		Boat->Initialize(*a_World);
+		auto x = Callbacks.m_Pos.x;
+		auto y = Callbacks.m_Pos.y;
+		auto z = Callbacks.m_Pos.z;
+		auto bx = FloorC(x);
+		auto by = FloorC(y);
+		auto bz = FloorC(z);
+
+		// Verify that block type for spawn point is water
+		BLOCKTYPE SpawnBlock = a_World->GetBlock(bx, by, bz);
+		if (!IsBlockWater(SpawnBlock))
+		{
+			return false;
+		}
+
+		// Block above must be air to spawn a boat (prevents spawning a boat underwater)
+		BLOCKTYPE BlockAbove = a_World->GetBlock(bx, by + 1, bz);
+		if (BlockAbove != E_BLOCK_AIR)
+		{
+			return false;
+		}
+
+		// Spawn block at water level
+		if (a_World->SpawnBoat(Callbacks.m_Pos + Vector3d(0.5, 0.5, 0.5), cBoat::ItemToMaterial(a_Player->GetEquippedItem())) == cEntity::INVALID_ID)
+		{
+			return false;
+		}
+
+		// Remove boat from players hand
+		if (!a_Player->IsGameModeCreative())
+		{
+			a_Player->GetInventory().RemoveOneEquippedItem();
+		}
 
 		return true;
 	}
 } ;
-
-
-
-

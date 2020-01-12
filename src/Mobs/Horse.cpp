@@ -2,28 +2,43 @@
 
 #include "Horse.h"
 #include "../World.h"
+#include "../EffectID.h"
 #include "../Entities/Player.h"
+#include "../UI/HorseWindow.h"
 
 
 
 
 
 cHorse::cHorse(int Type, int Color, int Style, int TameTimes) :
-	super("Horse", mtHorse, "mob.horse.hit", "mob.horse.death", 1.4, 1.6),
+	super("Horse", mtHorse, "entity.horse.hurt", "entity.horse.death", 1.4, 1.6),
+	cEntityWindowOwner(this),
 	m_bHasChest(false),
 	m_bIsEating(false),
 	m_bIsRearing(false),
 	m_bIsMouthOpen(false),
 	m_bIsTame(false),
-	m_bIsSaddled(false),
 	m_Type(Type),
 	m_Color(Color),
 	m_Style(Style),
-	m_Armour(0),
 	m_TimesToTame(TameTimes),
 	m_TameAttemptTimes(0),
-	m_RearTickCount(0)
+	m_RearTickCount(0),
+	m_MaxSpeed(14.0)
 {
+}
+
+
+
+
+
+cHorse::~cHorse()
+{
+	auto Window = GetWindow();
+	if (Window != nullptr)
+	{
+		Window->OwnerDestroyed();
+	}
 }
 
 
@@ -33,17 +48,24 @@ cHorse::cHorse(int Type, int Color, int Style, int TameTimes) :
 void cHorse::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
 	super::Tick(a_Dt, a_Chunk);
+	if (!IsTicking())
+	{
+		// The base class tick destroyed us
+		return;
+	}
+
+	auto & Random = GetRandomProvider();
 
 	if (!m_bIsMouthOpen)
 	{
-		if (m_World->GetTickRandomNumber(50) == 25)
+		if (Random.RandBool(0.02))
 		{
 			m_bIsMouthOpen = true;
 		}
 	}
 	else
 	{
-		if (m_World->GetTickRandomNumber(10) == 5)
+		if (Random.RandBool(0.10))
 		{
 			m_bIsMouthOpen = false;
 		}
@@ -53,23 +75,25 @@ void cHorse::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 	{
 		if (m_TameAttemptTimes < m_TimesToTame)
 		{
-			if (m_World->GetTickRandomNumber(50) == 25)
+			if (Random.RandBool(0.02))
 			{
-				m_World->BroadcastSoundParticleEffect(2000, (int)GetPosX(), (int)GetPosY(), (int)GetPosZ(), 0);
-				m_World->BroadcastSoundParticleEffect(2000, (int)GetPosX(), (int)GetPosY(), (int)GetPosZ(), 2);
-				m_World->BroadcastSoundParticleEffect(2000, (int)GetPosX(), (int)GetPosY(), (int)GetPosZ(), 6);
-				m_World->BroadcastSoundParticleEffect(2000, (int)GetPosX(), (int)GetPosY(), (int)GetPosZ(), 8);
+				m_World->BroadcastSoundParticleEffect(EffectID::PARTICLE_SMOKE, GetPosition().Floor(), int(SmokeDirection::SOUTH_EAST));
+				m_World->BroadcastSoundParticleEffect(EffectID::PARTICLE_SMOKE, GetPosition().Floor(), int(SmokeDirection::SOUTH_WEST));
+				m_World->BroadcastSoundParticleEffect(EffectID::PARTICLE_SMOKE, GetPosition().Floor(), int(SmokeDirection::NORTH_EAST));
+				m_World->BroadcastSoundParticleEffect(EffectID::PARTICLE_SMOKE, GetPosition().Floor(), int(SmokeDirection::NORTH_WEST));
 
+				m_World->BroadcastSoundEffect("entity.horse.angry", GetPosition(), 1.0f, 1.0f);
 				m_Attachee->Detach();
 				m_bIsRearing = true;
 			}
 		}
 		else
 		{
+			m_World->BroadcastParticleEffect("heart", static_cast<Vector3f>(GetPosition()), Vector3f{}, 0, 5);
 			m_bIsTame = true;
 		}
 	}
-	
+
 	if (m_bIsRearing)
 	{
 		if (m_RearTickCount == 20)
@@ -92,45 +116,123 @@ void cHorse::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 
 void cHorse::OnRightClicked(cPlayer & a_Player)
 {
-	if (!m_bIsSaddled && m_bIsTame)
+	super::OnRightClicked(a_Player);
+
+	if (m_bIsTame)
 	{
-		if (a_Player.GetEquippedItem().m_ItemType == E_ITEM_SADDLE)
+		if (a_Player.IsCrouched())
 		{
-			// Saddle the horse:
-			if (!a_Player.IsGameModeCreative())
-			{
-				a_Player.GetInventory().RemoveOneEquippedItem();
-			}
-			m_bIsSaddled = true;
-			m_World->BroadcastEntityMetadata(*this);
+			PlayerOpenWindow(a_Player);
+			return;
 		}
-		else if (!a_Player.GetEquippedItem().IsEmpty())
+
+		auto EquipedItemType = a_Player.GetEquippedItem().m_ItemType;
+
+		if (
+			!IsSaddled() &&
+			(
+				(EquipedItemType == E_ITEM_SADDLE) ||
+				ItemCategory::IsHorseArmor(EquipedItemType)
+			)
+		)
 		{
-			// The horse doesn't like being hit, make it rear:
-			m_bIsRearing = true;
-			m_RearTickCount = 0;
+			// Player is holding a horse inventory item, open the window:
+			PlayerOpenWindow(a_Player);
+		}
+		else
+		{
+			a_Player.AttachTo(this);
+		}
+	}
+	else if (a_Player.GetEquippedItem().IsEmpty())
+	{
+		// Check if leashed / unleashed to player before try to ride
+		if (!m_IsLeashActionJustDone)
+		{
+			if (m_Attachee != nullptr)
+			{
+				if (m_Attachee->GetUniqueID() == a_Player.GetUniqueID())
+				{
+					a_Player.Detach();
+					return;
+				}
+
+				if (m_Attachee->IsPlayer())
+				{
+					return;
+				}
+
+				m_Attachee->Detach();
+			}
+
+			m_TameAttemptTimes++;
+			a_Player.AttachTo(this);
 		}
 	}
 	else
 	{
-		if (m_Attachee != nullptr)
+		m_bIsRearing = true;
+		m_RearTickCount = 0;
+		m_World->BroadcastSoundEffect("entity.horse.angry", GetPosition(), 1.0f, 0.8f);
+	}
+}
+
+
+
+
+
+void cHorse::SetHorseSaddle(cItem a_Saddle)
+{
+	if (a_Saddle.m_ItemType == E_ITEM_SADDLE)
+	{
+		m_World->BroadcastSoundEffect("entity.horse.saddle", GetPosition(), 1.0f, 0.8f);
+	}
+	else if (!a_Saddle.IsEmpty())
+	{
+		return;  // Invalid item
+	}
+
+	m_Saddle = std::move(a_Saddle);
+	m_World->BroadcastEntityMetadata(*this);
+}
+
+
+
+
+
+void cHorse::SetHorseArmor(cItem a_Armor)
+{
+	if (ItemCategory::IsHorseArmor(a_Armor.m_ItemType))
+	{
+		m_World->BroadcastSoundEffect("entity.horse.armor", GetPosition(), 1.0f, 0.8f);
+	}
+	else if (!a_Armor.IsEmpty())
+	{
+		return;  // Invalid item
+	}
+
+	m_Armor = std::move(a_Armor);
+	m_World->BroadcastEntityMetadata(*this);
+}
+
+
+
+
+
+int cHorse::GetHorseArmour(void) const
+{
+	switch (m_Armor.m_ItemType)
+	{
+		case E_ITEM_EMPTY:               return 0;
+		case E_ITEM_IRON_HORSE_ARMOR:    return 1;
+		case E_ITEM_GOLD_HORSE_ARMOR:    return 2;
+		case E_ITEM_DIAMOND_HORSE_ARMOR: return 3;
+
+		default:
 		{
-			if (m_Attachee->GetUniqueID() == a_Player.GetUniqueID())
-			{
-				a_Player.Detach();
-				return;
-			}
-
-			if (m_Attachee->IsPlayer())
-			{
-				return;
-			}
-
-			m_Attachee->Detach();
+			LOGWARN("cHorse::GetHorseArmour: Invalid armour item (%d)", m_Armor.m_ItemType);
+			return 0;
 		}
-
-		m_TameAttemptTimes++;
-		a_Player.AttachTo(this);
 	}
 }
 
@@ -140,18 +242,64 @@ void cHorse::OnRightClicked(cPlayer & a_Player)
 
 void cHorse::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 {
-	int LootingLevel = 0;
+	if (IsBaby())
+	{
+		return;  // Babies don't drop items
+	}
+
+	unsigned int LootingLevel = 0;
 	if (a_Killer != nullptr)
 	{
 		LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);
 	}
 	AddRandomDropItem(a_Drops, 0, 2 + LootingLevel, E_ITEM_LEATHER);
-	if (m_bIsSaddled)
+	if (IsSaddled())
 	{
-		a_Drops.push_back(cItem(E_ITEM_SADDLE, 1));
+		a_Drops.push_back(m_Saddle);
+	}
+	if (!m_Armor.IsEmpty())
+	{
+		a_Drops.push_back(m_Armor);
 	}
 }
 
 
 
 
+
+void cHorse::InStateIdle(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
+{
+	// If horse is tame and someone is sitting on it, don't walk around
+	if ((!m_bIsTame) || (m_Attachee == nullptr))
+	{
+		super::InStateIdle(a_Dt, a_Chunk);
+	}
+}
+
+
+
+
+
+void cHorse::HandleSpeedFromAttachee(float a_Forward, float a_Sideways)
+{
+	if ((m_bIsTame) && IsSaddled())
+	{
+		super::HandleSpeedFromAttachee(a_Forward * m_MaxSpeed, a_Sideways * m_MaxSpeed);
+	}
+}
+
+
+
+
+
+void cHorse::PlayerOpenWindow(cPlayer & a_Player)
+{
+	auto Window = GetWindow();
+	if (Window == nullptr)
+	{
+		Window = new cHorseWindow(*this);
+		OpenWindow(Window);
+	}
+
+	a_Player.OpenWindow(*Window);
+}

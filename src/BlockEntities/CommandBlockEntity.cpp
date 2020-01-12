@@ -17,22 +17,23 @@
 
 
 
-cCommandBlockEntity::cCommandBlockEntity(int a_X, int a_Y, int a_Z, cWorld * a_World) :
-	super(E_BLOCK_COMMAND_BLOCK, a_X, a_Y, a_Z, a_World),
+cCommandBlockEntity::cCommandBlockEntity(BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, Vector3i a_Pos, cWorld * a_World):
+	super(a_BlockType, a_BlockMeta, a_Pos, a_World),
 	m_ShouldExecute(false),
-	m_IsPowered(false),
 	m_Result(0)
-{}
+{
+	ASSERT(a_BlockType == E_BLOCK_COMMAND_BLOCK);
+}
 
 
 
 
 
-
-void cCommandBlockEntity::UsedBy(cPlayer * a_Player)
+bool cCommandBlockEntity::UsedBy(cPlayer * a_Player)
 {
 	// Nothing to do
 	UNUSED(a_Player);
+	return true;
 }
 
 
@@ -50,7 +51,7 @@ void cCommandBlockEntity::SetCommand(const AString & a_Cmd)
 
 	Just documenting my experience in getting this to work :P
 	*/
-	m_World->BroadcastBlockEntity(GetPosX(), GetPosY(), GetPosZ());
+	m_World->BroadcastBlockEntity(GetPos());
 }
 
 
@@ -59,7 +60,7 @@ void cCommandBlockEntity::SetCommand(const AString & a_Cmd)
 
 void cCommandBlockEntity::SetLastOutput(const AString & a_LastOut)
 {
-	m_World->BroadcastBlockEntity(GetPosX(), GetPosY(), GetPosZ());
+	m_World->BroadcastBlockEntity(GetPos());
 	m_LastOutput = a_LastOut;
 }
 
@@ -112,13 +113,14 @@ void cCommandBlockEntity::Activate(void)
 
 
 
-void cCommandBlockEntity::SetRedstonePower(bool a_IsPowered)
+void cCommandBlockEntity::CopyFrom(const cBlockEntity & a_Src)
 {
-	if (a_IsPowered && !m_IsPowered)
-	{
-		Activate();
-	}
-	m_IsPowered = a_IsPowered;
+	super::CopyFrom(a_Src);
+	auto & src = static_cast<const cCommandBlockEntity &>(a_Src);
+	m_Command = src.m_Command;
+	m_LastOutput = src.m_LastOutput;
+	m_Result = src.m_Result;
+	m_ShouldExecute = src.m_ShouldExecute;
 }
 
 
@@ -133,7 +135,7 @@ bool cCommandBlockEntity::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 	{
 		return false;
 	}
-	
+
 	m_ShouldExecute = false;
 	Execute();
 	return true;
@@ -155,7 +157,7 @@ void cCommandBlockEntity::SendTo(cClientHandle & a_Client)
 void cCommandBlockEntity::Execute()
 {
 	ASSERT(m_World != nullptr);  // Execute should not be called before the command block is attached to a world
-	
+
 	if (!m_World->AreCommandBlocksEnabled())
 	{
 		return;

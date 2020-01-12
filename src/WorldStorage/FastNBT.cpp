@@ -25,21 +25,130 @@ static const int MAX_LIST_ITEMS = 10000;
 
 #ifdef _MSC_VER
 	// Dodge a C4127 (conditional expression is constant) for this specific macro usage
-	#define RETURN_FALSE_IF_FALSE(X) do { if (!X) return false; } while ((false, false))
+	#define PROPAGATE_ERROR(X) do { auto Err = (X); if (Err != eNBTParseError::npSuccess) return Err; } while ((false, false))
 #else
-	#define RETURN_FALSE_IF_FALSE(X) do { if (!X) return false; } while (false)
+	#define PROPAGATE_ERROR(X) do { auto Err = (X); if (Err != eNBTParseError::npSuccess) return Err; } while (false)
 #endif
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// cNBTParseErrorCategory:
+
+namespace
+{
+
+class cNBTParseErrorCategory final :
+	public std::error_category
+{
+	cNBTParseErrorCategory() = default;
+public:
+	/** Category name */
+	virtual const char * name() const NOEXCEPT override
+	{
+		return "NBT parse error";
+	}
+
+	/** Maps a parse error code to an error message */
+	virtual AString message(int a_Condition) const override;
+
+	/** Returns the canonical error category instance. */
+	static const cNBTParseErrorCategory & Get() NOEXCEPT
+	{
+		static cNBTParseErrorCategory Category;
+		return Category;
+	}
+};
+
+
+
+
+
+AString cNBTParseErrorCategory::message(int a_Condition) const
+{
+	switch (static_cast<eNBTParseError>(a_Condition))
+	{
+		case eNBTParseError::npSuccess:
+		{
+			return "Parsing succeded";
+		}
+		case eNBTParseError::npNeedBytes:
+		{
+			return "Expected more data";
+		}
+		case eNBTParseError::npNoTopLevelCompound:
+		{
+			return "No top level compound tag";
+		}
+		case eNBTParseError::npStringMissingLength:
+		{
+			return "Expected a string length but had insufficient data";
+		}
+		case eNBTParseError::npStringInvalidLength:
+		{
+			return "String length invalid";
+		}
+		case eNBTParseError::npCompoundImbalancedTag:
+		{
+			return "Compound tag was unmatched at end of file";
+		}
+		case eNBTParseError::npListMissingType:
+		{
+			return "Expected a list type but had insuffiecient data";
+		}
+		case eNBTParseError::npListMissingLength:
+		{
+			return "Expected a list length but had insufficient data";
+		}
+		case eNBTParseError::npListInvalidLength:
+		{
+			return "List length invalid";
+		}
+		case eNBTParseError::npSimpleMissing:
+		{
+			return "Expected a numeric type but had insufficient data";
+		}
+		case eNBTParseError::npArrayMissingLength:
+		{
+			return "Expected an array length but had insufficient data";
+		}
+		case eNBTParseError::npArrayInvalidLength:
+		{
+			return "Array length invalid";
+		}
+		case eNBTParseError::npUnknownTag:
+		{
+			return "Unknown tag";
+		}
+	}
+	UNREACHABLE("Unsupported nbt parse error");
+}
+
+}  // namespace (anonymous)
+
+
+
+
+
+std::error_code make_error_code(eNBTParseError a_Err) NOEXCEPT
+{
+	return { static_cast<int>(a_Err), cNBTParseErrorCategory::Get() };
+}
+
+
 
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // cParsedNBT:
 
-#define NEEDBYTES(N) \
-	if (m_Length - m_Pos < (size_t)N) \
-	{ \
-		return false; \
-	}
+#define NEEDBYTES(N, ERR) \
+	do { \
+		if (m_Length - m_Pos < static_cast<size_t>(N)) \
+		{ \
+			return ERR; \
+		} \
+	} while (false)
 
 
 
@@ -50,61 +159,55 @@ cParsedNBT::cParsedNBT(const char * a_Data, size_t a_Length) :
 	m_Length(a_Length),
 	m_Pos(0)
 {
-	m_IsValid = Parse();
+	m_Error = Parse();
 }
 
 
 
 
 
-bool cParsedNBT::Parse(void)
+eNBTParseError cParsedNBT::Parse(void)
 {
 	if (m_Length < 3)
 	{
 		// Data too short
-		return false;
+		return eNBTParseError::npNeedBytes;
 	}
 	if (m_Data[0] != TAG_Compound)
 	{
 		// The top-level tag must be a Compound
-		return false;
+		return eNBTParseError::npNoTopLevelCompound;
 	}
-	
+
 	m_Tags.reserve(NBT_RESERVE_SIZE);
-	
-	m_Tags.push_back(cFastNBTTag(TAG_Compound, -1));
-	
+
+	m_Tags.emplace_back(TAG_Compound, -1);
+
 	m_Pos = 1;
-	
-	RETURN_FALSE_IF_FALSE(ReadString(m_Tags.back().m_NameStart, m_Tags.back().m_NameLength));
-	RETURN_FALSE_IF_FALSE(ReadCompound());
-	
-	return true;
+
+	PROPAGATE_ERROR(ReadString(m_Tags.back().m_NameStart, m_Tags.back().m_NameLength));
+	return ReadCompound();
 }
 
 
 
 
 
-bool cParsedNBT::ReadString(size_t & a_StringStart, size_t & a_StringLen)
+eNBTParseError cParsedNBT::ReadString(size_t & a_StringStart, size_t & a_StringLen)
 {
-	NEEDBYTES(2);
+	NEEDBYTES(2, eNBTParseError::npStringMissingLength);
 	a_StringStart = m_Pos + 2;
-	a_StringLen = (size_t)GetBEShort(m_Data + m_Pos);
-	if (a_StringLen > 0xffff)
-	{
-		// Suspicious string length
-		return false;
-	}
+	a_StringLen = static_cast<size_t>(GetBEShort(m_Data + m_Pos));
+	NEEDBYTES(2 + a_StringLen, eNBTParseError::npStringInvalidLength);
 	m_Pos += 2 + a_StringLen;
-	return true;
+	return eNBTParseError::npSuccess;
 }
 
 
 
 
 
-bool cParsedNBT::ReadCompound(void)
+eNBTParseError cParsedNBT::ReadCompound(void)
 {
 	ASSERT(m_Tags.size() > 0);
 
@@ -113,54 +216,19 @@ bool cParsedNBT::ReadCompound(void)
 	int PrevSibling = -1;
 	for (;;)
 	{
-		NEEDBYTES(1);
-		eTagType TagType = (eTagType)(m_Data[m_Pos]);
+		NEEDBYTES(1, eNBTParseError::npCompoundImbalancedTag);
+		const char TagTypeNum = m_Data[m_Pos];
+		if ((TagTypeNum < TAG_Min) || (TagTypeNum > TAG_Max))
+		{
+			return eNBTParseError::npUnknownTag;
+		}
+		eTagType TagType = static_cast<eTagType>(TagTypeNum);
 		m_Pos++;
 		if (TagType == TAG_End)
 		{
 			break;
 		}
-		m_Tags.push_back(cFastNBTTag(TagType, static_cast<int>(ParentIdx), PrevSibling));
-		if (PrevSibling >= 0)
-		{
-			m_Tags[static_cast<size_t>(PrevSibling)].m_NextSibling = (int)m_Tags.size() - 1;
-		}
-		else
-		{
-			m_Tags[ParentIdx].m_FirstChild = (int)m_Tags.size() - 1;
-		}
-		PrevSibling = (int)m_Tags.size() - 1;
-		RETURN_FALSE_IF_FALSE(ReadString(m_Tags.back().m_NameStart, m_Tags.back().m_NameLength));
-		RETURN_FALSE_IF_FALSE(ReadTag());
-	}  // while (true)
-	m_Tags[ParentIdx].m_LastChild = PrevSibling;
-	return true;
-}
-
-
-
-
-
-bool cParsedNBT::ReadList(eTagType a_ChildrenType)
-{
-	// Reads the latest tag as a list of items of type a_ChildrenType
-	
-	// Read the count:
-	NEEDBYTES(4);
-	int Count = GetBEInt(m_Data + m_Pos);
-	m_Pos += 4;
-	if ((Count < 0) || (Count > MAX_LIST_ITEMS))
-	{
-		return false;
-	}
-
-	// Read items:
-	ASSERT(m_Tags.size() > 0);
-	size_t ParentIdx = m_Tags.size() - 1;
-	int PrevSibling = -1;
-	for (int i = 0; i < Count; i++)
-	{
-		m_Tags.push_back(cFastNBTTag(a_ChildrenType, static_cast<int>(ParentIdx), PrevSibling));
+		m_Tags.emplace_back(TagType, static_cast<int>(ParentIdx), PrevSibling);
 		if (PrevSibling >= 0)
 		{
 			m_Tags[static_cast<size_t>(PrevSibling)].m_NextSibling = static_cast<int>(m_Tags.size()) - 1;
@@ -170,10 +238,50 @@ bool cParsedNBT::ReadList(eTagType a_ChildrenType)
 			m_Tags[ParentIdx].m_FirstChild = static_cast<int>(m_Tags.size()) - 1;
 		}
 		PrevSibling = static_cast<int>(m_Tags.size()) - 1;
-		RETURN_FALSE_IF_FALSE(ReadTag());
+		PROPAGATE_ERROR(ReadString(m_Tags.back().m_NameStart, m_Tags.back().m_NameLength));
+		PROPAGATE_ERROR(ReadTag());
+	}  // while (true)
+	m_Tags[ParentIdx].m_LastChild = PrevSibling;
+	return eNBTParseError::npSuccess;
+}
+
+
+
+
+
+eNBTParseError cParsedNBT::ReadList(eTagType a_ChildrenType)
+{
+	// Reads the latest tag as a list of items of type a_ChildrenType
+
+	// Read the count:
+	NEEDBYTES(4, eNBTParseError::npListMissingLength);
+	int Count = GetBEInt(m_Data + m_Pos);
+	m_Pos += 4;
+	if ((Count < 0) || (Count > MAX_LIST_ITEMS))
+	{
+		return eNBTParseError::npListInvalidLength;
+	}
+
+	// Read items:
+	ASSERT(m_Tags.size() > 0);
+	size_t ParentIdx = m_Tags.size() - 1;
+	int PrevSibling = -1;
+	for (int i = 0; i < Count; i++)
+	{
+		m_Tags.emplace_back(a_ChildrenType, static_cast<int>(ParentIdx), PrevSibling);
+		if (PrevSibling >= 0)
+		{
+			m_Tags[static_cast<size_t>(PrevSibling)].m_NextSibling = static_cast<int>(m_Tags.size()) - 1;
+		}
+		else
+		{
+			m_Tags[ParentIdx].m_FirstChild = static_cast<int>(m_Tags.size()) - 1;
+		}
+		PrevSibling = static_cast<int>(m_Tags.size()) - 1;
+		PROPAGATE_ERROR(ReadTag());
 	}  // for (i)
 	m_Tags[ParentIdx].m_LastChild = PrevSibling;
-	return true;
+	return eNBTParseError::npSuccess;
 }
 
 
@@ -183,14 +291,14 @@ bool cParsedNBT::ReadList(eTagType a_ChildrenType)
 #define CASE_SIMPLE_TAG(TAGTYPE, LEN) \
 	case TAG_##TAGTYPE: \
 	{ \
-		NEEDBYTES(LEN); \
+		NEEDBYTES(LEN, eNBTParseError::npSimpleMissing); \
 		Tag.m_DataStart = m_Pos; \
 		Tag.m_DataLength = LEN; \
 		m_Pos += LEN; \
-		return true; \
+		return eNBTParseError::npSuccess; \
 	}
-	
-bool cParsedNBT::ReadTag(void)
+
+eNBTParseError cParsedNBT::ReadTag(void)
 {
 	cFastNBTTag & Tag = m_Tags.back();
 	switch (Tag.m_Type)
@@ -201,68 +309,68 @@ bool cParsedNBT::ReadTag(void)
 		CASE_SIMPLE_TAG(Long,   8)
 		CASE_SIMPLE_TAG(Float,  4)
 		CASE_SIMPLE_TAG(Double, 8)
-		
+
 		case TAG_String:
 		{
 			return ReadString(Tag.m_DataStart, Tag.m_DataLength);
 		}
-		
+
 		case TAG_ByteArray:
 		{
-			NEEDBYTES(4);
+			NEEDBYTES(4, eNBTParseError::npArrayMissingLength);
 			int len = GetBEInt(m_Data + m_Pos);
 			m_Pos += 4;
 			if (len < 0)
 			{
 				// Invalid length
-				return false;
+				return eNBTParseError::npArrayInvalidLength;
 			}
-			NEEDBYTES(len);
+			NEEDBYTES(len, eNBTParseError::npArrayInvalidLength);
 			Tag.m_DataLength = static_cast<size_t>(len);
 			Tag.m_DataStart = m_Pos;
 			m_Pos += static_cast<size_t>(len);
-			return true;
+			return eNBTParseError::npSuccess;
 		}
-		
+
 		case TAG_List:
 		{
-			NEEDBYTES(1);
+			NEEDBYTES(1, eNBTParseError::npListMissingType);
 			eTagType ItemType = static_cast<eTagType>(m_Data[m_Pos]);
 			m_Pos++;
-			RETURN_FALSE_IF_FALSE(ReadList(ItemType));
-			return true;
+			PROPAGATE_ERROR(ReadList(ItemType));
+			return eNBTParseError::npSuccess;
 		}
-		
+
 		case TAG_Compound:
 		{
-			RETURN_FALSE_IF_FALSE(ReadCompound());
-			return true;
+			PROPAGATE_ERROR(ReadCompound());
+			return eNBTParseError::npSuccess;
 		}
-		
+
 		case TAG_IntArray:
 		{
-			NEEDBYTES(4);
+			NEEDBYTES(4, eNBTParseError::npArrayMissingLength);
 			int len = GetBEInt(m_Data + m_Pos);
 			m_Pos += 4;
 			if (len < 0)
 			{
 				// Invalid length
-				return false;
+				return eNBTParseError::npArrayInvalidLength;
 			}
 			len *= 4;
-			NEEDBYTES(len);
+			NEEDBYTES(len, eNBTParseError::npArrayInvalidLength);
 			Tag.m_DataLength = static_cast<size_t>(len);
 			Tag.m_DataStart = m_Pos;
 			m_Pos += static_cast<size_t>(len);
-			return true;
+			return eNBTParseError::npSuccess;
 		}
-		
-		default:
+
+		case TAG_Min:
 		{
-			ASSERT(!"Unhandled NBT tag type");
-			return false;
+			return eNBTParseError::npUnknownTag;
 		}
 	}  // switch (iType)
+	UNREACHABLE("Unsupported nbt tag type");
 }
 
 #undef CASE_SIMPLE_TAG
@@ -281,7 +389,7 @@ int cParsedNBT::FindChildByName(int a_Tag, const char * a_Name, size_t a_NameLen
 	{
 		return -1;
 	}
-	
+
 	if (a_NameLength == 0)
 	{
 		a_NameLength = strlen(a_Name);
@@ -325,7 +433,7 @@ int cParsedNBT::FindTagByPath(int a_Tag, const AString & a_Path) const
 		}
 		Begin = i + 1;
 	}  // for i - a_Path[]
-	
+
 	if (Begin < Length)
 	{
 		Tag = FindChildByName(Tag, a_Path.c_str() + Begin, Length - Begin);
@@ -346,7 +454,7 @@ cFastNBTWriter::cFastNBTWriter(const AString & a_RootTagName) :
 	m_Stack[0].m_Type = TAG_Compound;
 	m_Result.reserve(100 * 1024);
 	m_Result.push_back(TAG_Compound);
-	WriteString(a_RootTagName.data(), (UInt16)a_RootTagName.size());
+	WriteString(a_RootTagName.data(), static_cast<UInt16>(a_RootTagName.size()));
 }
 
 
@@ -360,9 +468,9 @@ void cFastNBTWriter::BeginCompound(const AString & a_Name)
 		ASSERT(!"Stack overflow");
 		return;
 	}
-	
+
 	TagCommon(a_Name, TAG_Compound);
-	
+
 	++m_CurrentStack;
 	m_Stack[m_CurrentStack].m_Type = TAG_Compound;
 }
@@ -375,7 +483,7 @@ void cFastNBTWriter::EndCompound(void)
 {
 	ASSERT(m_CurrentStack > 0);
 	ASSERT(IsStackTopCompound());
-	
+
 	m_Result.push_back(TAG_End);
 	--m_CurrentStack;
 }
@@ -391,15 +499,15 @@ void cFastNBTWriter::BeginList(const AString & a_Name, eTagType a_ChildrenType)
 		ASSERT(!"Stack overflow");
 		return;
 	}
-	
+
 	TagCommon(a_Name, TAG_List);
-		
-	m_Result.push_back((char)a_ChildrenType);
-	m_Result.append(4, (char)0);
-	
+
+	m_Result.push_back(static_cast<char>(a_ChildrenType));
+	m_Result.append(4, static_cast<char>(0));
+
 	++m_CurrentStack;
 	m_Stack[m_CurrentStack].m_Type     = TAG_List;
-	m_Stack[m_CurrentStack].m_Pos      = (int)m_Result.size() - 4;
+	m_Stack[m_CurrentStack].m_Pos      = static_cast<int>(m_Result.size()) - 4;
 	m_Stack[m_CurrentStack].m_Count    = 0;
 	m_Stack[m_CurrentStack].m_ItemType = a_ChildrenType;
 }
@@ -412,7 +520,7 @@ void cFastNBTWriter::EndList(void)
 {
 	ASSERT(m_CurrentStack > 0);
 	ASSERT(m_Stack[m_CurrentStack].m_Type == TAG_List);
-	
+
 	// Update the list count:
 	SetBEInt(const_cast<char *>(m_Result.c_str() + m_Stack[m_CurrentStack].m_Pos), m_Stack[m_CurrentStack].m_Count);
 
@@ -436,7 +544,7 @@ void cFastNBTWriter::AddByte(const AString & a_Name, unsigned char a_Value)
 void cFastNBTWriter::AddShort(const AString & a_Name, Int16 a_Value)
 {
 	TagCommon(a_Name, TAG_Short);
-	UInt16 Value = htons(a_Value);
+	UInt16 Value = htons(static_cast<UInt16>(a_Value));
 	m_Result.append(reinterpret_cast<const char *>(&Value), 2);
 }
 
@@ -447,7 +555,7 @@ void cFastNBTWriter::AddShort(const AString & a_Name, Int16 a_Value)
 void cFastNBTWriter::AddInt(const AString & a_Name, Int32 a_Value)
 {
 	TagCommon(a_Name, TAG_Int);
-	UInt32 Value = htonl(a_Value);
+	UInt32 Value = htonl(static_cast<UInt32>(a_Value));
 	m_Result.append(reinterpret_cast<const char *>(&Value), 4);
 }
 
@@ -491,7 +599,7 @@ void cFastNBTWriter::AddDouble(const AString & a_Name, double a_Value)
 void cFastNBTWriter::AddString(const AString & a_Name, const AString & a_Value)
 {
 	TagCommon(a_Name, TAG_String);
-	UInt16 len = htons(static_cast<short>(a_Value.size()));
+	UInt16 len = htons(static_cast<UInt16>(a_Value.size()));
 	m_Result.append(reinterpret_cast<const char *>(&len), 2);
 	m_Result.append(a_Value.c_str(), a_Value.size());
 }
@@ -503,7 +611,7 @@ void cFastNBTWriter::AddString(const AString & a_Name, const AString & a_Value)
 void cFastNBTWriter::AddByteArray(const AString & a_Name, const char * a_Value, size_t a_NumElements)
 {
 	TagCommon(a_Name, TAG_ByteArray);
-	u_long len = htonl(static_cast<u_long>(a_NumElements));
+	UInt32 len = htonl(static_cast<UInt32>(a_NumElements));
 	m_Result.append(reinterpret_cast<const char *>(&len), 4);
 	m_Result.append(a_Value, a_NumElements);
 }
@@ -515,7 +623,7 @@ void cFastNBTWriter::AddByteArray(const AString & a_Name, const char * a_Value, 
 void cFastNBTWriter::AddIntArray(const AString & a_Name, const int * a_Value, size_t a_NumElements)
 {
 	TagCommon(a_Name, TAG_IntArray);
-	u_long len = htonl(static_cast<u_long>(a_NumElements));
+	UInt32 len = htonl(static_cast<UInt32>(a_NumElements));
 	size_t cap = m_Result.capacity();
 	size_t size = m_Result.length();
 	if ((cap - size) < (4 + a_NumElements * 4))
@@ -525,7 +633,7 @@ void cFastNBTWriter::AddIntArray(const AString & a_Name, const int * a_Value, si
 	m_Result.append(reinterpret_cast<const char *>(&len), 4);
 	for (size_t i = 0; i < a_NumElements; i++)
 	{
-		UInt32 Element = htonl(a_Value[i]);
+		UInt32 Element = htonl(static_cast<UInt32>(a_Value[i]));
 		m_Result.append(reinterpret_cast<const char *>(&Element), 4);
 	}
 }

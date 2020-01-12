@@ -3,6 +3,7 @@
 
 #include "BlockHandler.h"
 #include "ChunkInterface.h"
+#include "../Items/ItemHandler.h"
 
 
 
@@ -10,104 +11,135 @@
 class cBlockBigFlowerHandler :
 	public cBlockHandler
 {
+	using super = cBlockHandler;
+
 public:
-	typedef cBlockHandler super;
 
-	cBlockBigFlowerHandler(BLOCKTYPE a_BlockType)
-		: cBlockHandler(a_BlockType)
+	cBlockBigFlowerHandler(BLOCKTYPE a_BlockType):
+		super(a_BlockType)
 	{
 	}
 
 
-	virtual void DropBlock(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cBlockPluginInterface & a_BlockPluginInterface, cEntity * a_Digger, int a_BlockX, int a_BlockY, int a_BlockZ, bool a_CanDrop) override
+
+
+
+	virtual bool DoesIgnoreBuildCollision(cChunkInterface & a_ChunkInterface, Vector3i a_Pos, cPlayer & a_Player, NIBBLETYPE a_Meta) override
 	{
-		NIBBLETYPE Meta = a_ChunkInterface.GetBlockMeta(a_BlockX, a_BlockY, a_BlockZ);
-		if (Meta & 0x8)
+		if (IsMetaTopPart(a_Meta))
 		{
-			super::DropBlock(a_ChunkInterface, a_WorldInterface, a_BlockPluginInterface, a_Digger, a_BlockX, a_BlockY - 1, a_BlockZ, a_CanDrop);
-		}
-		else
-		{
-			super::DropBlock(a_ChunkInterface, a_WorldInterface, a_BlockPluginInterface, a_Digger, a_BlockX, a_BlockY, a_BlockZ, a_CanDrop);
-		}
-	}
-
-
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
-	{
-		NIBBLETYPE Meta = a_BlockMeta & 0x7;
-		
-		if ((Meta == E_META_BIG_FLOWER_DOUBLE_TALL_GRASS) || (Meta == E_META_BIG_FLOWER_LARGE_FERN))
-		{
-			return;
-		}
-		
-		a_Pickups.push_back(cItem(E_BLOCK_BIG_FLOWER, 1, Meta));
-	}
-
-
-	virtual void OnDestroyedByPlayer(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ) override
-	{
-		NIBBLETYPE Meta = a_ChunkInterface.GetBlockMeta(a_BlockX, a_BlockY, a_BlockZ);
-		if (Meta & 0x8)
-		{
-			Meta = a_ChunkInterface.GetBlockMeta(a_BlockX, a_BlockY - 1, a_BlockZ);
-		}
-		
-		NIBBLETYPE FlowerMeta = Meta & 0x7;
-		if (!a_Player->IsGameModeCreative())
-		{
-			if (((FlowerMeta == 2) || (FlowerMeta == 3)) && (a_Player->GetEquippedItem().m_ItemType == E_ITEM_SHEARS))
+			BLOCKTYPE BottomType;
+			if (
+				(a_Pos.y < 1) ||
+				!a_ChunkInterface.GetBlockTypeMeta(a_Pos - Vector3i(0, 1, 0), BottomType, a_Meta) ||
+				(BottomType != E_BLOCK_BIG_FLOWER)
+			)
 			{
-				MTRand r1;
-				if (r1.randInt(10) == 5)
-				{
-					cItems Pickups;
-					if (FlowerMeta == E_META_BIG_FLOWER_DOUBLE_TALL_GRASS)
-					{
-						Pickups.Add(E_BLOCK_TALL_GRASS, 2, 1);
-					}
-					else if (FlowerMeta == E_META_BIG_FLOWER_LARGE_FERN)
-					{
-						Pickups.Add(E_BLOCK_TALL_GRASS, 2, 2);
-					}
-					a_WorldInterface.SpawnItemPickups(Pickups, a_BlockX, a_BlockY, a_BlockZ);
-				}
-				a_Player->UseEquippedItem();
+				// Can't find the flower meta so assume grass
+				return true;
 			}
 		}
+
+		NIBBLETYPE FlowerMeta = a_Meta & 0x07;
+		return (
+			(FlowerMeta == E_META_BIG_FLOWER_DOUBLE_TALL_GRASS) ||
+			(FlowerMeta == E_META_BIG_FLOWER_LARGE_FERN)
+		);
 	}
+
+
+
+
+
+	virtual cItems ConvertToPickups(NIBBLETYPE a_BlockMeta, cBlockEntity * a_BlockEntity, const cEntity * a_Digger, const cItem * a_Tool) override
+	{
+		if (IsMetaTopPart(a_BlockMeta))
+		{
+			return {};  // No drops from the top part
+		}
+
+		// With shears, drop self (even tall grass and fern):
+		if ((a_Tool != nullptr) && (a_Tool->m_ItemType == E_ITEM_SHEARS))
+		{
+			// Bit 0x08 specifies whether this is a top part or bottom; cut it off from the pickup:
+			return cItem(m_BlockType, 1, a_BlockMeta & 0x07);
+		}
+
+		// Tall grass drops seeds, large fern drops nothing, others drop self:
+		auto flowerType = a_BlockMeta & 0x07;
+		if (flowerType == E_META_BIG_FLOWER_DOUBLE_TALL_GRASS)
+		{
+			if (GetRandomProvider().RandBool(1.0 / 24.0))
+			{
+				return cItem(E_ITEM_SEEDS);
+			}
+		}
+		else if (flowerType != E_META_BIG_FLOWER_LARGE_FERN)
+		{
+			return cItem(m_BlockType, 1, static_cast<short>(flowerType));
+		}
+		return {};
+	}
+
+
+
+
+
+	bool IsMetaTopPart(NIBBLETYPE a_Meta)
+	{
+		return ((a_Meta & 0x08) != 0);
+	}
+
+
+
 
 
 	virtual bool CanBeAt(cChunkInterface & a_ChunkInterface, int a_RelX, int a_RelY, int a_RelZ, const cChunk & a_Chunk) override
 	{
-		return ((a_RelY > 0) && (a_Chunk.GetBlock(a_RelX, a_RelY - 1, a_RelZ) != E_BLOCK_AIR) && (a_RelY < cChunkDef::Height - 1) && ((a_Chunk.GetBlock(a_RelX, a_RelY + 1, a_RelZ) == E_BLOCK_AIR) || (a_Chunk.GetBlock(a_RelX, a_RelY + 1, a_RelZ) == E_BLOCK_BIG_FLOWER)));
+		if (a_RelY <= 0)
+		{
+			return false;
+		}
+		BLOCKTYPE BlockType;
+		NIBBLETYPE BlockMeta;
+		a_Chunk.GetBlockTypeMeta(a_RelX, a_RelY - 1, a_RelZ, BlockType, BlockMeta);
+
+		return IsBlockTypeOfDirt(BlockType) || ((BlockType == E_BLOCK_BIG_FLOWER) && !IsMetaTopPart(BlockMeta));
 	}
 
 
-	virtual void OnDestroyed(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, int a_BlockX, int a_BlockY, int a_BlockZ) override
-	{
-		NIBBLETYPE OldMeta = a_ChunkInterface.GetBlockMeta(a_BlockX, a_BlockY, a_BlockZ);
 
-		if (OldMeta & 0x8)
+
+
+	virtual void OnBroken(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, Vector3i a_BlockPos, BLOCKTYPE a_OldBlockType, NIBBLETYPE a_OldBlockMeta) override
+	{
+		if ((a_OldBlockMeta & 0x8) != 0)
 		{
 			// Was upper part of flower
-			if (a_ChunkInterface.GetBlock(a_BlockX, a_BlockY - 1, a_BlockZ) == m_BlockType)
+			auto lowerPartPos = a_BlockPos - Vector3i(0, 1, 0);
+			if (a_ChunkInterface.GetBlock(lowerPartPos) == a_OldBlockType)
 			{
-				a_ChunkInterface.FastSetBlock(a_BlockX, a_BlockY - 1, a_BlockZ, E_BLOCK_AIR, 0);
+				a_ChunkInterface.DropBlockAsPickups(lowerPartPos);
 			}
 		}
 		else
 		{
 			// Was lower part
-			if (a_ChunkInterface.GetBlock(a_BlockX, a_BlockY + 1, a_BlockZ) == m_BlockType)
+			auto upperPartPos = a_BlockPos + Vector3i(0, 1, 0);
+			if (a_ChunkInterface.GetBlock(upperPartPos) == a_OldBlockType)
 			{
-				a_ChunkInterface.FastSetBlock(a_BlockX, a_BlockY + 1, a_BlockZ, E_BLOCK_AIR, 0);
+				a_ChunkInterface.DropBlockAsPickups(upperPartPos);
 			}
 		}
 	}
+
+
+
+
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 7;
+	}
 } ;
-
-
-
-

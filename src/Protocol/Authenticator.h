@@ -1,10 +1,10 @@
 
 // cAuthenticator.h
 
-// Interfaces to the cAuthenticator class representing the thread that authenticates users against the official MC server
+// Interfaces to the cAuthenticator class representing the thread that authenticates users against the official Mojang servers
 // Authentication prevents "hackers" from joining with an arbitrary username (possibly impersonating the server admins)
-// For more info, see http://wiki.vg/Session#Server_operation
-// In MCS, authentication is implemented as a single thread that receives queued auth requests and dispatches them one by one.
+// For more info, see http://wiki.vg/Session
+// In Cuberite, authentication is implemented as a single thread that receives queued auth requests and dispatches them one by one.
 
 
 
@@ -14,12 +14,9 @@
 
 #include "../OSSupport/IsThread.h"
 
-
-
-
-
-// fwd: "cRoot.h"
-class cRoot;
+// fwd:
+class cUUID;
+class cSettingsRepositoryInterface;
 
 namespace Json
 {
@@ -37,20 +34,20 @@ class cAuthenticator :
 
 public:
 	cAuthenticator(void);
-	~cAuthenticator();
+	virtual ~cAuthenticator() override;
 
 	/** (Re-)read server and address from INI: */
-	void ReadINI(cIniFile & IniFile);
+	void ReadSettings(cSettingsRepositoryInterface & a_Settings);
 
 	/** Queues a request for authenticating a user. If the auth fails, the user will be kicked */
 	void Authenticate(int a_ClientID, const AString & a_UserName, const AString & a_ServerHash);
 
 	/** Starts the authenticator thread. The thread may be started and stopped repeatedly */
-	void Start(cIniFile & IniFile);
+	void Start(cSettingsRepositoryInterface & a_Settings);
 
 	/** Stops the authenticator thread. The thread may be started and stopped repeatedly */
 	void Stop(void);
-	
+
 private:
 
 	class cUser
@@ -76,13 +73,13 @@ private:
 
 	/** The server that is to be contacted for auth / UUID conversions */
 	AString m_Server;
-	
+
 	/** The URL to use for auth, without server part.
 	%USERNAME% will be replaced with actual user name.
 	%SERVERID% will be replaced with server's ID.
 	For example "/session/minecraft/hasJoined?username=%USERNAME%&serverId=%SERVERID%". */
 	AString m_Address;
-	
+
 	AString m_PropertiesAddress;
 	bool    m_ShouldAuthenticate;
 
@@ -91,7 +88,7 @@ private:
 
 	/** Returns true if the user authenticated okay, false on error
 	Returns the case-corrected username, UUID, and properties (eg. skin). */
-	bool AuthWithYggdrasil(AString & a_UserName, const AString & a_ServerId, AString & a_UUID, Json::Value & a_Properties);
+	bool AuthWithYggdrasil(AString & a_UserName, const AString & a_ServerId, cUUID & a_UUID, Json::Value & a_Properties);
 };
 
 

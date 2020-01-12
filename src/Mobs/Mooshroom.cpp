@@ -8,13 +8,8 @@
 
 
 
-
-
-
-
-
 cMooshroom::cMooshroom(void) :
-	super("Mooshroom", mtMooshroom, "mob.cow.hurt", "mob.cow.hurt", 0.9, 1.3)
+	super("Mooshroom", mtMooshroom, "entity.cow.hurt", "entity.cow.death", 0.9, 1.3)
 {
 }
 
@@ -24,7 +19,12 @@ cMooshroom::cMooshroom(void) :
 
 void cMooshroom::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 {
-	int LootingLevel = 0;
+	if (IsBaby())
+	{
+		return;  // Babies don't drop items
+	}
+
+	unsigned int LootingLevel = 0;
 	if (a_Killer != nullptr)
 	{
 		LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);
@@ -67,9 +67,8 @@ void cMooshroom::OnRightClicked(cPlayer & a_Player)
 			cItems Drops;
 			Drops.push_back(cItem(E_BLOCK_RED_MUSHROOM, 5, 0));
 			m_World->SpawnItemPickups(Drops, GetPosX(), GetPosY(), GetPosZ(), 10);
-			m_World->SpawnMob(GetPosX(), GetPosY(), GetPosZ(), mtCow);
+			m_World->SpawnMob(GetPosX(), GetPosY(), GetPosZ(), mtCow, false);
 			Destroy();
 		} break;
 	}
 }
-

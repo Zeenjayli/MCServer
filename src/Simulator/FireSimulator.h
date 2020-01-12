@@ -2,7 +2,6 @@
 #pragma once
 
 #include "Simulator.h"
-#include "../BlockEntities/BlockEntity.h"
 
 
 
@@ -20,7 +19,7 @@ class cFireSimulator :
 {
 public:
 	cFireSimulator(cWorld & a_World, cIniFile & a_IniFile);
-	~cFireSimulator();
+	virtual ~cFireSimulator() override;
 
 	virtual void Simulate(float a_Dt) override { UNUSED(a_Dt);}  // not used
 	virtual void SimulateChunk(std::chrono::milliseconds a_Dt, int a_ChunkX, int a_ChunkZ, cChunk * a_Chunk) override;
@@ -31,43 +30,42 @@ public:
 	static bool DoesBurnForever(BLOCKTYPE a_BlockType);
 
 protected:
-	/// Time (in msec) that a fire block takes to burn with a fuel block into the next step
+	/** Time (in msec) that a fire block takes to burn with a fuel block into the next step */
 	unsigned m_BurnStepTimeFuel;
 
-	/// Time (in msec) that a fire block takes to burn without a fuel block into the next step
+	/** Time (in msec) that a fire block takes to burn without a fuel block into the next step */
 	unsigned m_BurnStepTimeNonfuel;
 
-	/// Chance [0..100000] of an adjacent fuel to catch fire on each tick
+	/** Chance [0..100000] of an adjacent fuel to catch fire on each tick */
 	int m_Flammability;
-	
-	/// Chance [0..100000] of a fuel burning out being replaced by a new fire block instead of an air block
+
+	/** Chance [0..100000] of a fuel burning out being replaced by a new fire block instead of an air block */
 	int m_ReplaceFuelChance;
-	
-	
-	virtual void AddBlock(int a_BlockX, int a_BlockY, int a_BlockZ, cChunk * a_Chunk) override;
-	
-	/// Returns the time [msec] after which the specified fire block is stepped again; based on surrounding fuels
-	int GetBurnStepTime(cChunk * a_Chunk, int a_RelX, int a_RelY, int a_RelZ);
-	
-	/// Tries to spread fire to a neighborhood of the specified block
-	void TrySpreadFire(cChunk * a_Chunk, int a_RelX, int a_RelY, int a_RelZ);
-	
-	/// Removes all burnable blocks neighboring the specified block
-	void RemoveFuelNeighbors(cChunk * a_Chunk, int a_RelX, int a_RelY, int a_RelZ);
-	
+
+
+	virtual void AddBlock(Vector3i a_Block, cChunk * a_Chunk) override;
+
+	/** Returns the time [msec] after which the specified fire block is stepped again; based on surrounding fuels */
+	int GetBurnStepTime(cChunk * a_Chunk, Vector3i a_RelPos);
+
+	/** Tries to spread fire to a neighborhood of the specified block */
+	void TrySpreadFire(cChunk * a_Chunk, Vector3i a_RelPos);
+
+	/** Removes all burnable blocks neighboring the specified block */
+	void RemoveFuelNeighbors(cChunk * a_Chunk, Vector3i a_RelPos);
+
 	/** Returns true if a fire can be started in the specified block,
 	that is, it is an air block and has fuel next to it.
 	Note that a_NearChunk may be a chunk neighbor to the block specified!
-	The coords are relative to a_NearChunk but not necessarily in it.
-	*/
-	bool CanStartFireInBlock(cChunk * a_NearChunk, int a_RelX, int a_RelY, int a_RelZ);
+	The coords are relative to a_NearChunk but not necessarily in it. */
+	bool CanStartFireInBlock(cChunk * a_NearChunk, Vector3i a_RelPos);
 } ;
 
 
 
 
 
-/// Stores individual fire blocks in the chunk; the int data is used as the time [msec] the fire takes to step to another stage (blockmeta++)
+/** Stores individual fire blocks in the chunk; the int data is used as the time [msec] the fire takes to step to another stage (blockmeta++) */
 typedef cCoordWithIntList cFireSimulatorChunkData;
 
 

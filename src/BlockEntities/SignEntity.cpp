@@ -12,19 +12,35 @@
 
 
 
-cSignEntity::cSignEntity(BLOCKTYPE a_BlockType, int a_X, int a_Y, int a_Z, cWorld * a_World) :
-	super(a_BlockType, a_X, a_Y, a_Z, a_World)
+cSignEntity::cSignEntity(BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, Vector3i a_Pos, cWorld * a_World):
+	super(a_BlockType, a_BlockMeta, a_Pos, a_World)
 {
-	ASSERT((a_Y >= 0) && (a_Y < cChunkDef::Height));
+	ASSERT((a_BlockType ==  E_BLOCK_WALLSIGN) || (a_BlockType == E_BLOCK_SIGN_POST));
+	ASSERT(cChunkDef::IsValidHeight(a_Pos.y));
 }
 
 
 
 
 
-void cSignEntity::UsedBy(cPlayer * a_Player)
+void cSignEntity::CopyFrom(const cBlockEntity & a_Src)
+{
+	super::CopyFrom(a_Src);
+	auto & src = static_cast<const cSignEntity &>(a_Src);
+	for (size_t i = 0; i < ARRAYCOUNT(m_Line); ++i)
+	{
+		m_Line[i] = src.m_Line[i];
+	}
+}
+
+
+
+
+
+bool cSignEntity::UsedBy(cPlayer * a_Player)
 {
 	UNUSED(a_Player);
+	return true;
 }
 
 
@@ -73,5 +89,5 @@ AString cSignEntity::GetLine(int a_Index) const
 
 void cSignEntity::SendTo(cClientHandle & a_Client)
 {
-	a_Client.SendUpdateSign(m_PosX, m_PosY, m_PosZ, m_Line[0], m_Line[1], m_Line[2], m_Line[3]);
+	a_Client.SendUpdateSign(m_Pos.x, m_Pos.y, m_Pos.z, m_Line[0], m_Line[1], m_Line[2], m_Line[3]);
 }

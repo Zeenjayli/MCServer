@@ -3,11 +3,6 @@
 
 
 
-#include <list>
-#include <vector>
-
-
-
 
 
 template <typename T>
@@ -26,18 +21,17 @@ public:
 	inline Vector3(T a_x, T a_y, T a_z) : x(a_x), y(a_y), z(a_z) {}
 
 
-	// Hardcoded copy constructors (tolua++ does not support function templates .. yet)
-	Vector3(const Vector3<float>  & a_Rhs) : x(static_cast<T>(a_Rhs.x)), y(static_cast<T>(a_Rhs.y)), z(static_cast<T>(a_Rhs.z)) {}
-	Vector3(const Vector3<double> & a_Rhs) : x(static_cast<T>(a_Rhs.x)), y(static_cast<T>(a_Rhs.y)), z(static_cast<T>(a_Rhs.z)) {}
-	Vector3(const Vector3<int>    & a_Rhs) : x(static_cast<T>(a_Rhs.x)), y(static_cast<T>(a_Rhs.y)), z(static_cast<T>(a_Rhs.z)) {}
+	#ifdef TOLUA_EXPOSITION  // Hardcoded copy constructors (tolua++ does not support function templates .. yet)
+		Vector3(const Vector3<float>  & a_Rhs);
+		Vector3(const Vector3<double> & a_Rhs);
+		Vector3(const Vector3<int>    & a_Rhs);
+	#endif
 
 
 	// tolua_end
-	template <typename _T>
-	Vector3(const Vector3<_T> & a_Rhs) : x(a_Rhs.x), y(a_Rhs.y), z(a_Rhs.z) {}
-
-	template <typename _T>
-	Vector3(const Vector3<_T> * a_Rhs) : x(a_Rhs->x), y(a_Rhs->y), z(a_Rhs->z) {}
+	// Conversion constructors where U is not the same as T leaving the copy-constructor implicitly generated
+	template <typename U, typename = typename std::enable_if<!std::is_same<U, T>::value>::type>
+	Vector3(const Vector3<U> & a_Rhs): x(static_cast<T>(a_Rhs.x)), y(static_cast<T>(a_Rhs.y)), z(static_cast<T>(a_Rhs.z)) {}
 	// tolua_begin
 
 	inline void Set(T a_x, T a_y, T a_z)
@@ -67,6 +61,10 @@ public:
 		);
 	}
 
+	// tolua_end
+
+	/** Sets the given vector to the normalized version of this vector.
+	Removed from LuaAPI, because Lua doesn't need distinguishing from the other overload. */
 	inline void NormalizeCopy(Vector3<T> & a_Rhs) const
 	{
 		double Len = 1.0 / Length();
@@ -77,6 +75,8 @@ public:
 			static_cast<T>(z * Len)
 		);
 	}
+
+	// tolua_begin
 
 	inline bool HasNonZeroLength(void) const
 	{
@@ -107,21 +107,22 @@ public:
 		return x * a_Rhs.x + y * a_Rhs.y + z * a_Rhs.z;
 	}
 
-	inline void abs()
+	/** Updates each coord to its absolute value */
+	inline void Abs()
 	{
-		x = (x < 0) ? -x : x;
-		y = (y < 0) ? -y : y;
-		z = (z < 0) ? -z : z;
+		x = std::abs(x);
+		y = std::abs(y);
+		z = std::abs(z);
 	}
 
-	// We can't use a capital letter, because we wouldn't be able to call the normal Clamp function.
-	inline void clamp(T a_Min, T a_Max)
+	/** Clamps each coord into the specified range. */
+	inline void Clamp(T a_Min, T a_Max)
 	{
-		x = Clamp(x, a_Min, a_Max);
-		y = Clamp(y, a_Min, a_Max);
-		z = Clamp(z, a_Min, a_Max);
+		x = ::Clamp(x, a_Min, a_Max);
+		y = ::Clamp(y, a_Min, a_Max);
+		z = ::Clamp(z, a_Min, a_Max);
 	}
-	
+
 	inline Vector3<T> Cross(const Vector3<T> & a_Rhs) const
 	{
 		return Vector3<T>(
@@ -147,10 +148,10 @@ public:
 			#pragma clang diagnostic pop
 		#endif
 	}
-	
+
 	inline bool EqualsEps(const Vector3<T> & a_Rhs, T a_Eps) const
 	{
-		return (Abs(x - a_Rhs.x) < a_Eps) && (Abs(y - a_Rhs.y) < a_Eps) && (Abs(z - a_Rhs.z) < a_Eps);
+		return (std::abs(x - a_Rhs.x) < a_Eps) && (std::abs(y - a_Rhs.y) < a_Eps) && (std::abs(z - a_Rhs.z) < a_Eps);
 	}
 
 	inline void Move(T a_X, T a_Y, T a_Z)
@@ -167,7 +168,7 @@ public:
 		z += a_Diff.z;
 	}
 
-	/** Runs each value of the vector through std::floor() */
+	/** Returns a new Vector3i with coords set to std::floor() of this vector's coords. */
 	inline Vector3<int> Floor(void) const
 	{
 		return Vector3<int>(
@@ -227,16 +228,8 @@ public:
 		z *= a_v;
 	}
 
-	inline Vector3<T> & operator = (const Vector3<T> & a_Rhs)
-	{
-		x = a_Rhs.x;
-		y = a_Rhs.y;
-		z = a_Rhs.z;
-		return *this;
-	}
-
 	// tolua_begin
-	
+
 	inline Vector3<T> operator + (const Vector3<T>& a_Rhs) const
 	{
 		return Vector3<T>(
@@ -253,6 +246,11 @@ public:
 			y - a_Rhs.y,
 			z - a_Rhs.z
 		);
+	}
+
+	inline Vector3<T> operator - (void) const
+	{
+		return Vector3<T>(-x, -y, -z);
 	}
 
 	inline Vector3<T> operator * (const Vector3<T>& a_Rhs) const
@@ -291,6 +289,30 @@ public:
 		);
 	}
 
+	/** Returns a copy of this vector moved by the specified amount on the X axis. */
+	inline Vector3<T> addedX(T a_AddX) const
+	{
+		return Vector3<T>(x + a_AddX, y, z);
+	}
+
+	/** Returns a copy of this vector moved by the specified amount on the y axis. */
+	inline Vector3<T> addedY(T a_AddY) const
+	{
+		return Vector3<T>(x, y + a_AddY, z);
+	}
+
+	/** Returns a copy of this vector moved by the specified amount on the Z axis. */
+	inline Vector3<T> addedZ(T a_AddZ) const
+	{
+		return Vector3<T>(x, y, z + a_AddZ);
+	}
+
+	/** Returns a copy of this vector moved by the specified amount on the X and Z axes. */
+	inline Vector3<T> addedXZ(T a_AddX, T a_AddZ) const
+	{
+		return Vector3<T>(x + a_AddX, y, z + a_AddZ);
+	}
+
 	/** Returns the coefficient for the (a_OtherEnd - this) line to reach the specified Z coord.
 	The result satisfies the following equation:
 	(*this + Result * (a_OtherEnd - *this)).z = a_Z
@@ -298,7 +320,7 @@ public:
 	*/
 	inline double LineCoeffToXYPlane(const Vector3<T> & a_OtherEnd, T a_Z) const
 	{
-		if (Abs(z - a_OtherEnd.z) < EPS)
+		if (std::abs(z - a_OtherEnd.z) < EPS)
 		{
 			return NO_INTERSECTION;
 		}
@@ -313,7 +335,7 @@ public:
 	*/
 	inline double LineCoeffToXZPlane(const Vector3<T> & a_OtherEnd, T a_Y) const
 	{
-		if (Abs(y - a_OtherEnd.y) < EPS)
+		if (std::abs(y - a_OtherEnd.y) < EPS)
 		{
 			return NO_INTERSECTION;
 		}
@@ -328,7 +350,7 @@ public:
 	*/
 	inline double LineCoeffToYZPlane(const Vector3<T> & a_OtherEnd, T a_X) const
 	{
-		if (Abs(x - a_OtherEnd.x) < EPS)
+		if (std::abs(x - a_OtherEnd.x) < EPS)
 		{
 			return NO_INTERSECTION;
 		}
@@ -352,24 +374,29 @@ public:
 		z = -z;
 	}
 
+	// tolua_end
+
+	/** Allows formatting a Vector<T> using the same format specifiers as for T
+	e.g. `fmt::format("{0:0.2f}", Vector3f{0.0231f, 1.2146f, 1.0f}) == "{0.02, 1.21, 1.00}"` */
+	template <typename ArgFormatter>
+	friend void format_arg(fmt::BasicFormatter<char, ArgFormatter> & a_Formatter, const char *& a_FormatStr, Vector3 a_Vec)
+	{
+		std::array<T, 3> Data{{a_Vec.x, a_Vec.y, a_Vec.z}};
+
+		a_Formatter.writer() << '{';
+		fmt::format_arg(a_Formatter, a_FormatStr, fmt::join(Data.cbegin(), Data.cend(), ", "));
+		a_Formatter.writer() << '}';
+	}
+
+	// tolua_begin
+
 	/** The max difference between two coords for which the coords are assumed equal. */
 	static const double EPS;
 
 	/** Return value of LineCoeffToPlane() if the line is parallel to the plane. */
 	static const double NO_INTERSECTION;
-	
-protected:
-
-	/** Returns the absolute value of the given argument.
-	Templatized because the standard library differentiates between abs() and fabs(). */
-	static T Abs(T a_Value)
-	{
-		return (a_Value < 0) ? -a_Value : a_Value;
-	}
-
 };
 // tolua_end
-
 
 
 
@@ -379,6 +406,26 @@ template <> inline Vector3<int> Vector3<int>::Floor(void) const
 {
 	return *this;
 }
+
+
+
+
+
+template <typename What>
+class VectorHasher
+{
+public:
+	/** Provides a hash of a vector's contents */
+	size_t operator()(const Vector3<What> & a_Vector) const
+	{
+		// Guaranteed to have non repeating hashes for any 128x128x128 area
+		size_t Hash = static_cast<size_t>(a_Vector.y);
+		Hash <<= 16;
+		Hash ^= static_cast<size_t>(a_Vector.x);
+		Hash ^= static_cast<size_t>(a_Vector.z) << 8;
+		return Hash;
+	}
+};
 
 
 
@@ -404,7 +451,6 @@ typedef Vector3<int>    Vector3i;
 
 
 
-typedef std::list<Vector3i>   cVector3iList;
 typedef std::vector<Vector3i> cVector3iArray;
 
 

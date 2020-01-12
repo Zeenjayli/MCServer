@@ -10,7 +10,7 @@
 #pragma once
 
 #include "../OSSupport/Network.h"
-#include "PluginLua.h"
+#include "LuaState.h"
 
 
 
@@ -18,10 +18,10 @@
 
 // fwd:
 class cLuaTCPLink;
-typedef SharedPtr<cLuaTCPLink> cLuaTCPLinkPtr;
+typedef std::shared_ptr<cLuaTCPLink> cLuaTCPLinkPtr;
 typedef std::vector<cLuaTCPLinkPtr> cLuaTCPLinkPtrs;
 class cLuaServerHandle;
-typedef SharedPtr<cLuaServerHandle> cLuaServerHandlePtr;
+typedef std::shared_ptr<cLuaServerHandle> cLuaServerHandlePtr;
 
 
 
@@ -31,10 +31,10 @@ class cLuaServerHandle:
 {
 public:
 	/** Creates a new instance of the server handle,
-	attached to the specified lua plugin and wrapping the (listen-) callbacks that are in a table at the specified stack pos. */
-	cLuaServerHandle(UInt16 a_Port, cPluginLua & a_Plugin, int a_CallbacksTableStackPos);
+	wrapping the (listen-) callbacks that are in the specified table. */
+	cLuaServerHandle(UInt16 a_Port, cLuaState::cTableRefPtr && a_Callbacks);
 
-	~cLuaServerHandle();
+	virtual ~cLuaServerHandle() override;
 
 	/** Called by cNetwork::Listen()'s binding.
 	Sets the server handle around which this instance is wrapped, and a self SharedPtr for link management. */
@@ -54,11 +54,8 @@ public:
 	void Release(void);
 
 protected:
-	/** The plugin for which the server is created. */
-	cPluginLua & m_Plugin;
-
 	/** The Lua table that holds the callbacks to be invoked. */
-	cLuaState::cRef m_Callbacks;
+	cLuaState::cTableRefPtr m_Callbacks;
 
 	/** The port on which the server is listening.
 	Used mainly for better error reporting. */

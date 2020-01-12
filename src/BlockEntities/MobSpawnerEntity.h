@@ -16,19 +16,21 @@
 
 
 // tolua_begin
-
 class cMobSpawnerEntity :
 	public cBlockEntity
 {
-	typedef cBlockEntity super;
-public:
-
 	// tolua_end
-	
-	cMobSpawnerEntity(int a_BlockX, int a_BlockY, int a_BlockZ, cWorld * a_World);
 
+	using super = cBlockEntity;
+
+public:  // tolua_export
+
+	cMobSpawnerEntity(BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, Vector3i a_Pos, cWorld * a_World);
+
+	// cBlockEntity overrides:
+	virtual void CopyFrom(const cBlockEntity & a_Src) override;
 	virtual void SendTo(cClientHandle & a_Client) override;
-	virtual void UsedBy(cPlayer * a_Player) override;
+	virtual bool UsedBy(cPlayer * a_Player) override;
 	virtual bool Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk) override;
 
 	// tolua_begin

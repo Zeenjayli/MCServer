@@ -7,7 +7,6 @@
 #include "Mobs/Monster.h"
 #include "Root.h"
 #include "World.h"
-#include "ChunkDef.h"
 #include "Bindings/PluginManager.h"
 #include "ChatColor.h"
 #include "Entities/Player.h"
@@ -17,9 +16,9 @@
 #include "WebAdmin.h"
 #include "Protocol/ProtocolRecognizer.h"
 #include "CommandOutput.h"
+#include "FastRandom.h"
 
 #include "IniFile.h"
-#include "Vector3.h"
 
 #include <fstream>
 #include <sstream>
@@ -29,22 +28,6 @@ extern "C"
 {
 	#include "zlib/zlib.h"
 }
-
-
-
-
-// For the "dumpmem" server command:
-/// Synchronize this with main.cpp - the leak finder needs initialization before it can be used to dump memory
-// _X 2014_02_20: Disabled for canon repo, it makes the debug version too slow in MSVC2013
-// and we haven't had a memory leak for over a year anyway.
-// #define ENABLE_LEAK_FINDER
-
-#if defined(_MSC_VER) && defined(_DEBUG) && defined(ENABLE_LEAK_FINDER)
-	#pragma warning(push)
-	#pragma warning(disable:4100)
-	#include "LeakFinder.h"
-	#pragma warning(pop)
-#endif
 
 
 
@@ -72,7 +55,7 @@ class cServerListenCallbacks:
 
 	virtual void OnAccepted(cTCPLink & a_Link) override {}
 
-	virtual void OnError(int a_ErrorCode, const AString & a_ErrorMsg)
+	virtual void OnError(int a_ErrorCode, const AString & a_ErrorMsg) override
 	{
 		LOGWARNING("Cannot listen on port %d: %d (%s).", m_Port, a_ErrorCode, a_ErrorMsg.c_str());
 	}
@@ -133,7 +116,6 @@ void cServer::cTickThread::Execute(void)
 
 cServer::cServer(void) :
 	m_PlayerCount(0),
-	m_PlayerCountDiff(0),
 	m_ClientViewDistance(0),
 	m_bIsConnected(false),
 	m_bRestarting(false),
@@ -145,6 +127,8 @@ cServer::cServer(void) :
 	m_ShouldLoadOfflinePlayerData(false),
 	m_ShouldLoadNamedPlayerData(true)
 {
+	// Initialize the LuaStateTracker singleton before the app goes multithreaded:
+	cLuaStateTracker::GetStats();
 }
 
 
@@ -161,38 +145,31 @@ void cServer::ClientMovedToWorld(const cClientHandle * a_Client)
 
 
 
-void cServer::PlayerCreated(const cPlayer * a_Player)
+void cServer::PlayerCreated()
 {
-	UNUSED(a_Player);
-	// To avoid deadlocks, the player count is not handled directly, but rather posted onto the tick thread
-	cCSLock Lock(m_CSPlayerCountDiff);
-	m_PlayerCountDiff += 1;
+	m_PlayerCount++;
 }
 
 
 
 
 
-void cServer::PlayerDestroying(const cPlayer * a_Player)
+void cServer::PlayerDestroyed()
 {
-	UNUSED(a_Player);
-	// To avoid deadlocks, the player count is not handled directly, but rather posted onto the tick thread
-	cCSLock Lock(m_CSPlayerCountDiff);
-	m_PlayerCountDiff -= 1;
+	m_PlayerCount--;
 }
 
 
 
 
 
-bool cServer::InitServer(cIniFile & a_SettingsIni, bool a_ShouldAuth)
+bool cServer::InitServer(cSettingsRepositoryInterface & a_Settings, bool a_ShouldAuth)
 {
-	m_Description = a_SettingsIni.GetValueSet("Server", "Description", "MCServer - in C++!");
-	m_MaxPlayers  = a_SettingsIni.GetValueSetI("Server", "MaxPlayers", 100);
-	m_bIsHardcore = a_SettingsIni.GetValueSetB("Server", "HardcoreEnabled", false);
-	m_bAllowMultiLogin = a_SettingsIni.GetValueSetB("Server", "AllowMultiLogin", false);
-	m_PlayerCount = 0;
-	m_PlayerCountDiff = 0;
+	m_Description = a_Settings.GetValueSet("Server", "Description", "Cuberite - in C++!");
+	m_ShutdownMessage = a_Settings.GetValueSet("Server", "ShutdownMessage", "Server shutdown");
+	m_MaxPlayers = static_cast<size_t>(a_Settings.GetValueSetI("Server", "MaxPlayers", 100));
+	m_bIsHardcore = a_Settings.GetValueSetB("Server", "HardcoreEnabled", false);
+	m_bAllowMultiLogin = a_Settings.GetValueSetB("Server", "AllowMultiLogin", false);
 
 	m_FaviconData = Base64Encode(cFile::ReadWholeFile(FILE_IO_PREFIX + AString("favicon.png")));  // Will return empty string if file nonexistant; client doesn't mind
 
@@ -205,9 +182,9 @@ bool cServer::InitServer(cIniFile & a_SettingsIni, bool a_ShouldAuth)
 	LOGINFO("Compatible clients: %s", MCS_CLIENT_VERSIONS);
 	LOGINFO("Compatible protocol versions %s", MCS_PROTOCOL_VERSIONS);
 
-	m_Ports = ReadUpgradeIniPorts(a_SettingsIni, "Server", "Ports", "Port", "PortsIPv6", "25565");
+	m_Ports = ReadUpgradeIniPorts(a_Settings, "Server", "Ports", "Port", "PortsIPv6", "25565");
 
-	m_RCONServer.Initialize(a_SettingsIni);
+	m_RCONServer.Initialize(a_Settings);
 
 	m_bIsConnected = true;
 
@@ -215,9 +192,9 @@ bool cServer::InitServer(cIniFile & a_SettingsIni, bool a_ShouldAuth)
 	m_ShouldAuthenticate = a_ShouldAuth;
 	if (m_ShouldAuthenticate)
 	{
-		MTRand mtrand1;
-		unsigned int r1 = (mtrand1.randInt() % 1147483647) + 1000000000;
-		unsigned int r2 = (mtrand1.randInt() % 1147483647) + 1000000000;
+		auto & rand = GetRandomProvider();
+		unsigned int r1 = rand.RandInt<unsigned int>(1000000000U, 0x7fffffffU);
+		unsigned int r2 = rand.RandInt<unsigned int>(1000000000U, 0x7fffffffU);
 		std::ostringstream sid;
 		sid << std::hex << r1;
 		sid << std::hex << r2;
@@ -226,16 +203,18 @@ bool cServer::InitServer(cIniFile & a_SettingsIni, bool a_ShouldAuth)
 	}
 
 	// Check if both BungeeCord and online mode are on, if so, warn the admin:
-	m_ShouldAllowBungeeCord = a_SettingsIni.GetValueSetB("Authentication", "AllowBungeeCord", false);
+	m_ShouldAllowBungeeCord = a_Settings.GetValueSetB("Authentication", "AllowBungeeCord", false);
 	if (m_ShouldAllowBungeeCord && m_ShouldAuthenticate)
 	{
 		LOGWARNING("WARNING: BungeeCord is allowed and server set to online mode. This is unsafe and will not work properly. Disable either authentication or BungeeCord in settings.ini.");
 	}
 
-	m_ShouldLoadOfflinePlayerData = a_SettingsIni.GetValueSetB("PlayerData", "LoadOfflinePlayerData", false);
-	m_ShouldLoadNamedPlayerData   = a_SettingsIni.GetValueSetB("PlayerData", "LoadNamedPlayerData", true);
+	m_ShouldAllowMultiWorldTabCompletion = a_Settings.GetValueSetB("Server", "AllowMultiWorldTabCompletion", true);
+	m_ShouldLimitPlayerBlockChanges = a_Settings.GetValueSetB("AntiCheat", "LimitPlayerBlockChanges", true);
+	m_ShouldLoadOfflinePlayerData = a_Settings.GetValueSetB("PlayerData", "LoadOfflinePlayerData", false);
+	m_ShouldLoadNamedPlayerData   = a_Settings.GetValueSetB("PlayerData", "LoadNamedPlayerData", true);
 
-	m_ClientViewDistance = a_SettingsIni.GetValueSetI("Server", "DefaultViewDistance", cClientHandle::DEFAULT_VIEW_DISTANCE);
+	m_ClientViewDistance = a_Settings.GetValueSetI("Server", "DefaultViewDistance", cClientHandle::DEFAULT_VIEW_DISTANCE);
 	if (m_ClientViewDistance < cClientHandle::MIN_VIEW_DISTANCE)
 	{
 		m_ClientViewDistance = cClientHandle::MIN_VIEW_DISTANCE;
@@ -256,10 +235,53 @@ bool cServer::InitServer(cIniFile & a_SettingsIni, bool a_ShouldAuth)
 
 
 
-int cServer::GetNumPlayers(void) const
+bool cServer::RegisterForgeMod(const AString & a_ModName, const AString & a_ModVersion, UInt32 a_ProtocolVersionNumber)
 {
-	cCSLock Lock(m_CSPlayerCount);
-	return m_PlayerCount;
+	auto & Mods = RegisteredForgeMods(a_ProtocolVersionNumber);
+
+	return Mods.insert({a_ModName, a_ModVersion}).second;
+}
+
+
+
+
+
+void cServer::UnregisterForgeMod(const AString & a_ModName, UInt32 a_ProtocolVersionNumber)
+{
+	auto & Mods = RegisteredForgeMods(a_ProtocolVersionNumber);
+
+	auto it = Mods.find(a_ModName);
+	if (it != Mods.end())
+	{
+		Mods.erase(it);
+	}
+}
+
+
+
+
+
+AStringMap & cServer::RegisteredForgeMods(const UInt32 a_Protocol)
+{
+	auto it = m_ForgeModsByVersion.find(a_Protocol);
+
+	if (it == m_ForgeModsByVersion.end())
+	{
+		AStringMap mods;
+		m_ForgeModsByVersion.insert({a_Protocol, mods});
+		return m_ForgeModsByVersion.find(a_Protocol)->second;
+	}
+
+	return it->second;
+}
+
+
+
+
+
+const AStringMap & cServer::GetRegisteredForgeMods(const UInt32 a_Protocol)
+{
+	return RegisteredForgeMods(a_Protocol);
 }
 
 
@@ -301,7 +323,7 @@ cTCPLink::cCallbacksPtr cServer::OnConnectionAccepted(const AString & a_RemoteIP
 	NewHandle->SetSelf(NewHandle);
 	cCSLock Lock(m_CSClients);
 	m_Clients.push_back(NewHandle);
-	return NewHandle;
+	return std::move(NewHandle);
 }
 
 
@@ -310,17 +332,6 @@ cTCPLink::cCallbacksPtr cServer::OnConnectionAccepted(const AString & a_RemoteIP
 
 bool cServer::Tick(float a_Dt)
 {
-	// Apply the queued playercount adjustments (postponed to avoid deadlocks)
-	int PlayerCountDiff = 0;
-	{
-		cCSLock Lock(m_CSPlayerCountDiff);
-		std::swap(PlayerCountDiff, m_PlayerCountDiff);
-	}
-	{
-		cCSLock Lock(m_CSPlayerCount);
-		m_PlayerCount += PlayerCountDiff;
-	}
-
 	// Send the tick to the plugins, as well as let the plugin manager reload, if asked to (issue #102):
 	cPluginManager::Get()->Tick(a_Dt);
 
@@ -371,7 +382,7 @@ void cServer::TickClients(float a_Dt)
 		{
 			if ((*itr)->IsDestroyed())
 			{
-				// Delete the client later, when CS is not held, to avoid deadlock: http://forum.mc-server.org/showthread.php?tid=374
+				// Delete the client later, when CS is not held, to avoid deadlock: https://forum.cuberite.org/thread-374.html
 				RemoveClients.push_back(*itr);
 				itr = m_Clients.erase(itr);
 				continue;
@@ -490,26 +501,20 @@ void cServer::ExecuteConsoleCommand(const AString & a_Cmd, cCommandOutputCallbac
 	}
 	if (split[0] == "destroyentities")
 	{
-		class WorldCallback : public cWorldListCallback
-		{
-			virtual bool Item(cWorld * a_World) override
+		cRoot::Get()->ForEachWorld([](cWorld & a_World)
 			{
-				class EntityCallback : public cEntityCallback
-				{
-					virtual bool Item(cEntity * a_Entity) override
+				a_World.ForEachEntity([](cEntity & a_Entity)
 					{
-						if (!a_Entity->IsPlayer())
+						if (!a_Entity.IsPlayer())
 						{
-							a_Entity->Destroy();
+							a_Entity.Destroy();
 						}
 						return false;
 					}
-				} EC;
-				a_World->ForEachEntity(EC);
+				);
 				return false;
 			}
-		} WC;
-		cRoot::Get()->ForEachWorld(WC);
+		);
 		a_Output.Out("Destroyed all entities");
 		a_Output.Finished();
 		return;
@@ -522,23 +527,13 @@ void cServer::ExecuteConsoleCommand(const AString & a_Cmd, cCommandOutputCallbac
 		a_Output.Finished();
 		return;
 	}
-	#if defined(_MSC_VER) && defined(_DEBUG) && defined(ENABLE_LEAK_FINDER)
-	else if (split[0].compare("dumpmem") == 0)
+
+	else if (split[0].compare("luastats") == 0)
 	{
-		LeakFinderXmlOutput Output("memdump.xml");
-		DumpUsedMemory(&Output);
+		a_Output.Out(cLuaStateTracker::GetStats());
+		a_Output.Finished();
 		return;
 	}
-
-	else if (split[0].compare("killmem") == 0)
-	{
-		for (;;)
-		{
-			new char[100 * 1024 * 1024];  // Allocate and leak 100 MiB in a loop -> fill memory and kill MCS
-		}
-	}
-	#endif
-
 	else if (cPluginManager::Get()->ExecuteConsoleCommand(split, a_Output, a_Cmd))
 	{
 		a_Output.Finished();
@@ -588,7 +583,7 @@ void cServer::PrintHelp(const AStringVector & a_Split, cCommandOutputCallback & 
 	for (AStringPairs::const_iterator itr = Callback.m_Commands.begin(), end = Callback.m_Commands.end(); itr != end; ++itr)
 	{
 		const AStringPair & cmd = *itr;
-		a_Output.Out(Printf("%-*s%s\n", static_cast<int>(Callback.m_MaxLen), cmd.first.c_str(), cmd.second.c_str()));
+		a_Output.Out(Printf("%-*s - %s\n", static_cast<int>(Callback.m_MaxLen), cmd.first.c_str(), cmd.second.c_str()));
 	}  // for itr - Callback.m_Commands[]
 }
 
@@ -598,19 +593,32 @@ void cServer::PrintHelp(const AStringVector & a_Split, cCommandOutputCallback & 
 
 void cServer::BindBuiltInConsoleCommands(void)
 {
-	cPluginManager * PlgMgr = cPluginManager::Get();
-	PlgMgr->BindConsoleCommand("help", nullptr, " - Shows the available commands");
-	PlgMgr->BindConsoleCommand("reload", nullptr, " - Reloads all plugins");
-	PlgMgr->BindConsoleCommand("restart", nullptr, " - Restarts the server cleanly");
-	PlgMgr->BindConsoleCommand("stop", nullptr, " - Stops the server cleanly");
-	PlgMgr->BindConsoleCommand("chunkstats", nullptr, " - Displays detailed chunk memory statistics");
-	PlgMgr->BindConsoleCommand("load <pluginname>", nullptr, " - Adds and enables the specified plugin");
-	PlgMgr->BindConsoleCommand("unload <pluginname>", nullptr, " - Disables the specified plugin");
-	PlgMgr->BindConsoleCommand("destroyentities", nullptr, " - Destroys all entities in all worlds");
+	// Create an empty handler - the actual handling for the commands is performed before they are handed off to cPluginManager
+	class cEmptyHandler:
+		public cPluginManager::cCommandHandler
+	{
+		virtual bool ExecuteCommand(
+			const AStringVector & a_Split,
+			cPlayer * a_Player,
+			const AString & a_Command,
+			cCommandOutputCallback * a_Output = nullptr
+		) override
+		{
+			return false;
+		}
+	};
+	auto handler = std::make_shared<cEmptyHandler>();
 
-	#if defined(_MSC_VER) && defined(_DEBUG) && defined(ENABLE_LEAK_FINDER)
-	PlgMgr->BindConsoleCommand("dumpmem", nullptr, " - Dumps all used memory blocks together with their callstacks into memdump.xml");
-	#endif
+	// Register internal commands:
+	cPluginManager * PlgMgr = cPluginManager::Get();
+	PlgMgr->BindConsoleCommand("help",            nullptr, handler, "Shows the available commands");
+	PlgMgr->BindConsoleCommand("reload",          nullptr, handler, "Reloads all plugins");
+	PlgMgr->BindConsoleCommand("restart",         nullptr, handler, "Restarts the server cleanly");
+	PlgMgr->BindConsoleCommand("stop",            nullptr, handler, "Stops the server cleanly");
+	PlgMgr->BindConsoleCommand("chunkstats",      nullptr, handler, "Displays detailed chunk memory statistics");
+	PlgMgr->BindConsoleCommand("load",            nullptr, handler, "Adds and enables the specified plugin");
+	PlgMgr->BindConsoleCommand("unload",          nullptr, handler, "Disables the specified plugin");
+	PlgMgr->BindConsoleCommand("destroyentities", nullptr, handler, "Destroys all entities in all worlds");
 }
 
 
@@ -661,9 +669,17 @@ void cServer::KickUser(int a_ClientID, const AString & a_Reason)
 
 
 
-void cServer::AuthenticateUser(int a_ClientID, const AString & a_Name, const AString & a_UUID, const Json::Value & a_Properties)
+void cServer::AuthenticateUser(int a_ClientID, const AString & a_Name, const cUUID & a_UUID, const Json::Value & a_Properties)
 {
 	cCSLock Lock(m_CSClients);
+
+	// Check max players condition within lock (expect server and authenticator thread to both call here)
+	if (GetNumPlayers() >= GetMaxPlayers())
+	{
+		KickUser(a_ClientID, "The server is currently full :(" "\n" "Try again later?");
+		return;
+	}
+
 	for (auto itr = m_Clients.begin(); itr != m_Clients.end(); ++itr)
 	{
 		if ((*itr)->GetUniqueID() == a_ClientID)

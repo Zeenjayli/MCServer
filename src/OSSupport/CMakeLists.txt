@@ -1,9 +1,4 @@
 
-cmake_minimum_required (VERSION 2.6)
-project (MCServer)
-
-include_directories ("${PROJECT_SOURCE_DIR}/../")
-
 SET (SRCS
 	CriticalSection.cpp
 	Errors.cpp
@@ -14,12 +9,13 @@ SET (SRCS
 	IPLookup.cpp
 	IsThread.cpp
 	NetworkInterfaceEnum.cpp
+	NetworkLookup.cpp
 	NetworkSingleton.cpp
-	Semaphore.cpp
 	ServerHandleImpl.cpp
 	StackTrace.cpp
 	TCPLinkImpl.cpp
 	UDPEndpointImpl.cpp
+	WinStackWalker.cpp
 )
 
 SET (HDRS
@@ -27,28 +23,31 @@ SET (HDRS
 	Errors.h
 	Event.h
 	File.h
+	GetAddressInfoError.h
 	GZipFile.h
 	HostnameLookup.h
 	IPLookup.h
 	IsThread.h
 	Network.h
+	NetworkLookup.h
 	NetworkSingleton.h
 	Queue.h
-	Semaphore.h
 	ServerHandleImpl.h
 	StackTrace.h
 	TCPLinkImpl.h
 	UDPEndpointImpl.h
+	WinStackWalker.h
 )
+
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+	add_flags_cxx("-Wno-error=global-constructors ")
+endif()
 
 if(NOT MSVC)
 	add_library(OSSupport ${SRCS} ${HDRS})
+	target_link_libraries(OSSupport fmt::fmt)
 
-	if(UNIX)
-		if(NOT APPLE)
-			target_link_libraries(OSSupport rt)
-		endif()
-
-		target_link_libraries(OSSupport pthread event_core event_extra)
+	if(NOT WIN32)
+		target_link_libraries(OSSupport event_pthreads_static)
 	endif()
 endif()

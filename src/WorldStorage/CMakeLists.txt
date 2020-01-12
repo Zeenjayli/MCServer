@@ -1,9 +1,4 @@
 
-cmake_minimum_required (VERSION 2.6)
-project (MCServer)
-
-include_directories ("${PROJECT_SOURCE_DIR}/../")
-
 SET (SRCS
 	EnchantmentSerializer.cpp
 	FastNBT.cpp
@@ -14,7 +9,8 @@ SET (SRCS
 	ScoreboardSerializer.cpp
 	StatSerializer.cpp
 	WSSAnvil.cpp
-	WorldStorage.cpp)
+	WorldStorage.cpp
+)
 
 SET (HDRS
 	EnchantmentSerializer.h
@@ -26,10 +22,10 @@ SET (HDRS
 	ScoreboardSerializer.h
 	StatSerializer.h
 	WSSAnvil.h
-	WorldStorage.h)
+	WorldStorage.h
+)
 
 if(NOT MSVC)
 	add_library(WorldStorage ${SRCS} ${HDRS})
-
-	target_link_libraries(WorldStorage OSSupport)
+	target_link_libraries(WorldStorage fmt::fmt OSSupport)
 endif()

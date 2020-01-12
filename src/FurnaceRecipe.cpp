@@ -6,7 +6,7 @@
 
 #include <fstream>
 
-#define FURNACE_RECIPE_FILE "furnace.txt"
+#define FURNACE_RECIPE_FILE FILE_IO_PREFIX "furnace.txt"
 
 
 
@@ -61,23 +61,25 @@ void cFurnaceRecipe::ReloadRecipes(void)
 		LOG("Could not open the furnace recipes file \"%s\". No furnace recipes are available.", FURNACE_RECIPE_FILE);
 		return;
 	}
-	
+
 	unsigned int LineNum = 0;
 	AString ParsingLine;
 
 	while (std::getline(f, ParsingLine))
 	{
 		LineNum++;
-		if (ParsingLine.empty())
-		{
-			continue;
-		}
 
 		// Remove comments from the line:
 		size_t FirstCommentSymbol = ParsingLine.find('#');
 		if ((FirstCommentSymbol != AString::npos) && (FirstCommentSymbol != 0))
 		{
-			ParsingLine.erase(ParsingLine.begin() + (const long)FirstCommentSymbol, ParsingLine.end());
+			ParsingLine.erase(ParsingLine.begin() + static_cast<const long>(FirstCommentSymbol), ParsingLine.end());
+		}
+
+		if (IsOnlyWhitespace(ParsingLine))
+		{
+			// Ignore empty and whitespace only lines
+			continue;
 		}
 
 		switch (ParsingLine[0])
@@ -102,7 +104,7 @@ void cFurnaceRecipe::ReloadRecipes(void)
 		}  // switch (ParsingLine[0])
 	}  // while (getline(ParsingLine))
 
-	LOG("Loaded " SIZE_T_FMT " furnace recipes and " SIZE_T_FMT " fuels", m_pState->Recipes.size(), m_pState->Fuel.size());
+	LOG("Loaded %zu furnace recipes and %zu fuels", m_pState->Recipes.size(), m_pState->Fuel.size());
 }
 
 
@@ -115,13 +117,13 @@ void cFurnaceRecipe::AddFuelFromLine(const AString & a_Line, unsigned int a_Line
 	Line.erase(Line.begin());  // Remove the beginning "!"
 	Line.erase(std::remove_if(Line.begin(), Line.end(), isspace), Line.end());
 
-	std::unique_ptr<cItem> Item(new cItem);
+	std::unique_ptr<cItem> Item = cpp14::make_unique<cItem>();
 	int BurnTime;
 
 	const AStringVector & Sides = StringSplit(Line, "=");
 	if (Sides.size() != 2)
 	{
-		LOGWARNING("furnace.txt: line %d: A single '=' was expected, got %d", a_LineNum, (int)Sides.size() - 1);
+		LOGWARNING("furnace.txt: line %d: A single '=' was expected, got %zu", a_LineNum, Sides.size() - 1);
 		LOGINFO("Offending line: \"%s\"", a_Line.c_str());
 		return;
 	}
@@ -157,13 +159,14 @@ void cFurnaceRecipe::AddRecipeFromLine(const AString & a_Line, unsigned int a_Li
 	Line.erase(std::remove_if(Line.begin(), Line.end(), isspace), Line.end());
 
 	int CookTime = 200;
-	std::unique_ptr<cItem> InputItem(new cItem());
-	std::unique_ptr<cItem> OutputItem(new cItem());
+	float Reward = 0;
+	std::unique_ptr<cItem> InputItem = cpp14::make_unique<cItem>();
+	std::unique_ptr<cItem> OutputItem = cpp14::make_unique<cItem>();
 
 	const AStringVector & Sides = StringSplit(Line, "=");
 	if (Sides.size() != 2)
 	{
-		LOGWARNING("furnace.txt: line %d: A single '=' was expected, got %d", a_LineNum, (int)Sides.size() - 1);
+		LOGWARNING("furnace.txt: line %d: A single '=' was expected, got %zu", a_LineNum, Sides.size() - 1);
 		LOGINFO("Offending line: \"%s\"", a_Line.c_str());
 		return;
 	}
@@ -185,18 +188,27 @@ void cFurnaceRecipe::AddRecipeFromLine(const AString & a_Line, unsigned int a_Li
 			return;
 		}
 	}
-
-	if (!ParseItem(Sides[1], *OutputItem))
+	const AStringVector & OutputSplit = StringSplit(Sides[1], "$");
+	if (!ParseItem(OutputSplit[0], *OutputItem))
 	{
-		LOGWARNING("furnace.txt: line %d: Cannot parse output item \"%s\".", a_LineNum, Sides[1].c_str());
+		LOGWARNING("furnace.txt: line %d: Cannot parse output item \"%s\".", a_LineNum, OutputSplit[0].c_str());
 		LOGINFO("Offending line: \"%s\"", a_Line.c_str());
 		return;
 	}
-
+	if (OutputSplit.size() > 1)
+	{
+		if (!StringToFloat(OutputSplit[1], Reward))
+		{
+			LOGWARNING("furnace.txt: line %d: Cannot parse reward \"%s\".", a_LineNum, OutputSplit[1].c_str());
+			LOGINFO("Offending line: \"%s\"", a_Line.c_str());
+			return;
+		}
+	}
 	cRecipe Recipe;
 	Recipe.In = InputItem.release();
 	Recipe.Out = OutputItem.release();
 	Recipe.CookTime = CookTime;
+	Recipe.Reward = Reward;
 	m_pState->Recipes.push_back(Recipe);
 }
 
@@ -207,7 +219,7 @@ void cFurnaceRecipe::AddRecipeFromLine(const AString & a_Line, unsigned int a_Li
 bool cFurnaceRecipe::ParseItem(const AString & a_String, cItem & a_Item)
 {
 	AString ItemString = a_String;
-	
+
 	const AStringVector & SplitAmount = StringSplit(ItemString, ",");
 	ItemString = SplitAmount[0];
 
@@ -268,7 +280,7 @@ void cFurnaceRecipe::ClearRecipes(void)
 
 const cFurnaceRecipe::cRecipe * cFurnaceRecipe::GetRecipeFrom(const cItem & a_Ingredient) const
 {
-	const cRecipe * BestRecipe = 0;
+	const cRecipe * BestRecipe = nullptr;
 	for (RecipeList::const_iterator itr = m_pState->Recipes.begin(); itr != m_pState->Recipes.end(); ++itr)
 	{
 		const cRecipe & Recipe = *itr;

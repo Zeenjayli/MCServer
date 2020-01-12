@@ -19,9 +19,9 @@ cMapSerializer::cMapSerializer(const AString & a_WorldName, cMap * a_Map):
 	m_Map(a_Map)
 {
 	AString DataPath;
-	Printf(DataPath, "%s%cdata", a_WorldName.c_str(), cFile::PathSeparator);
+	Printf(DataPath, "%s%cdata", a_WorldName.c_str(), cFile::PathSeparator());
 
-	Printf(m_Path, "%s%cmap_%i.dat", DataPath.c_str(), cFile::PathSeparator, a_Map->GetID());
+	Printf(m_Path, "%s%cmap_%i.dat", DataPath.c_str(), cFile::PathSeparator(), a_Map->GetID());
 
 	cFile::CreateFolder(FILE_IO_PREFIX + DataPath);
 }
@@ -68,7 +68,7 @@ bool cMapSerializer::Save(void)
 	SaveMapToNBT(Writer);
 
 	Writer.Finish();
-	
+
 	#ifdef _DEBUG
 	cParsedNBT TestParse(Writer.GetResult().data(), Writer.GetResult().size());
 	ASSERT(TestParse.IsValid());
@@ -102,17 +102,17 @@ void cMapSerializer::SaveMapToNBT(cFastNBTWriter & a_Writer)
 {
 	a_Writer.BeginCompound("data");
 
-	a_Writer.AddByte("scale", m_Map->GetScale());
-	a_Writer.AddByte("dimension", (int) m_Map->GetDimension());
+	a_Writer.AddByte("scale", static_cast<Byte>(m_Map->GetScale()));
+	a_Writer.AddByte("dimension", static_cast<Byte>(m_Map->GetDimension()));
 
-	a_Writer.AddShort("width",  m_Map->GetWidth());
-	a_Writer.AddShort("height", m_Map->GetHeight());
+	a_Writer.AddShort("width",  static_cast<Int16>(m_Map->GetWidth()));
+	a_Writer.AddShort("height", static_cast<Int16>(m_Map->GetHeight()));
 
 	a_Writer.AddInt("xCenter", m_Map->GetCenterX());
 	a_Writer.AddInt("zCenter", m_Map->GetCenterZ());
 
 	const cMap::cColorList & Data = m_Map->GetData();
-	a_Writer.AddByteArray("colors", (char *)Data.data(), Data.size());
+	a_Writer.AddByteArray("colors", reinterpret_cast<const char *>(Data.data()), Data.size());
 
 	a_Writer.EndCompound();
 }
@@ -132,15 +132,15 @@ bool cMapSerializer::LoadMapFromNBT(const cParsedNBT & a_NBT)
 	int CurrLine = a_NBT.FindChildByName(Data, "scale");
 	if ((CurrLine >= 0) && (a_NBT.GetType(CurrLine) == TAG_Byte))
 	{
-		unsigned int Scale = (unsigned int)a_NBT.GetByte(CurrLine);
+		unsigned int Scale = static_cast<unsigned int>(a_NBT.GetByte(CurrLine));
 		m_Map->SetScale(Scale);
 	}
 
 	CurrLine = a_NBT.FindChildByName(Data, "dimension");
 	if ((CurrLine >= 0) && (a_NBT.GetType(CurrLine) == TAG_Byte))
 	{
-		eDimension Dimension = (eDimension) a_NBT.GetByte(CurrLine);
-		
+		eDimension Dimension = static_cast<eDimension>(a_NBT.GetByte(CurrLine));
+
 		if (Dimension != m_Map->m_World->GetDimension())
 		{
 			// TODO 2014-03-20 xdot: We should store nether maps in nether worlds, e.t.c.
@@ -151,7 +151,7 @@ bool cMapSerializer::LoadMapFromNBT(const cParsedNBT & a_NBT)
 	CurrLine = a_NBT.FindChildByName(Data, "width");
 	if ((CurrLine >= 0) && (a_NBT.GetType(CurrLine) == TAG_Short))
 	{
-		unsigned int Width = (unsigned int)a_NBT.GetShort(CurrLine);
+		unsigned int Width = static_cast<unsigned int>(a_NBT.GetShort(CurrLine));
 		if (Width != 128)
 		{
 			return false;
@@ -162,8 +162,8 @@ bool cMapSerializer::LoadMapFromNBT(const cParsedNBT & a_NBT)
 	CurrLine = a_NBT.FindChildByName(Data, "height");
 	if ((CurrLine >= 0) && (a_NBT.GetType(CurrLine) == TAG_Short))
 	{
-		unsigned int Height = (unsigned int)a_NBT.GetShort(CurrLine);
-		if (Height >= 256)
+		unsigned int Height = static_cast<unsigned int>(a_NBT.GetShort(CurrLine));
+		if (Height >= cChunkDef::Height)
 		{
 			return false;
 		}
@@ -203,9 +203,9 @@ bool cMapSerializer::LoadMapFromNBT(const cParsedNBT & a_NBT)
 cIDCountSerializer::cIDCountSerializer(const AString & a_WorldName) : m_MapCount(0)
 {
 	AString DataPath;
-	Printf(DataPath, "%s%cdata", a_WorldName.c_str(), cFile::PathSeparator);
+	Printf(DataPath, "%s%cdata", a_WorldName.c_str(), cFile::PathSeparator());
 
-	Printf(m_Path, "%s%cidcounts.dat", DataPath.c_str(), cFile::PathSeparator);
+	Printf(m_Path, "%s%cidcounts.dat", DataPath.c_str(), cFile::PathSeparator());
 
 	cFile::CreateFolder(FILE_IO_PREFIX + DataPath);
 }
@@ -235,7 +235,7 @@ bool cIDCountSerializer::Load(void)
 	int CurrLine = NBT.FindChildByName(0, "map");
 	if (CurrLine >= 0)
 	{
-		m_MapCount = (int)NBT.GetShort(CurrLine) + 1;
+		m_MapCount = static_cast<unsigned int>(NBT.GetShort(CurrLine) + 1);
 	}
 	else
 	{
@@ -255,11 +255,11 @@ bool cIDCountSerializer::Save(void)
 
 	if (m_MapCount > 0)
 	{
-		Writer.AddShort("map", m_MapCount - 1);
+		Writer.AddShort("map", static_cast<Int16>(m_MapCount - 1));
 	}
 
 	Writer.Finish();
-	
+
 	#ifdef _DEBUG
 	cParsedNBT TestParse(Writer.GetResult().data(), Writer.GetResult().size());
 	ASSERT(TestParse.IsValid());

@@ -6,21 +6,49 @@
 
 #include "Globals.h"
 #include "NetworkSingleton.h"
-#include <event2/event.h>
+#include "Network.h"
 #include <event2/thread.h>
 #include <event2/bufferevent.h>
-#include <event2/dns.h>
 #include <event2/listener.h>
-#include "IPLookup.h"
-#include "HostnameLookup.h"
 
 
 
 
 
-cNetworkSingleton::cNetworkSingleton(void):
-	m_HasTerminated(false)
+cNetworkSingleton::cNetworkSingleton() :
+	m_HasTerminated(true)
 {
+}
+
+
+
+
+
+cNetworkSingleton::~cNetworkSingleton() CAN_THROW
+{
+	// Check that Terminate has been called already:
+	ASSERT(m_HasTerminated);
+}
+
+
+
+
+
+cNetworkSingleton & cNetworkSingleton::Get(void)
+{
+	static cNetworkSingleton Instance;
+	return Instance;
+}
+
+
+
+
+
+void cNetworkSingleton::Initialise(void)
+{
+	// Start the lookup thread
+	m_LookupThread.Start();
+
 	// Windows: initialize networking:
 	#ifdef _WIN32
 		WSADATA wsaData;
@@ -54,36 +82,10 @@ cNetworkSingleton::cNetworkSingleton(void):
 		abort();
 	}
 
-	// Create the DNS lookup helper:
-	m_DNSBase = evdns_base_new(m_EventBase, 1);
-	if (m_DNSBase == nullptr)
-	{
-		LOGERROR("Failed to initialize LibEvent's DNS subsystem. The server will now terminate.");
-		abort();
-	}
-
 	// Create the event loop thread:
+	m_HasTerminated = false;
 	m_EventLoopThread = std::thread(RunEventLoop, this);
-}
-
-
-
-
-
-cNetworkSingleton::~cNetworkSingleton()
-{
-	// Check that Terminate has been called already:
-	ASSERT(m_HasTerminated);
-}
-
-
-
-
-
-cNetworkSingleton & cNetworkSingleton::Get(void)
-{
-	static cNetworkSingleton Instance;
-	return Instance;
+	m_StartupEvent.Wait();  // Wait for the LibEvent loop to actually start running (otherwise calling Terminate too soon would hang, see #3228)
 }
 
 
@@ -93,26 +95,43 @@ cNetworkSingleton & cNetworkSingleton::Get(void)
 void cNetworkSingleton::Terminate(void)
 {
 	ASSERT(!m_HasTerminated);
-	m_HasTerminated = true;
+
+	// Wait for the lookup thread to stop
+	m_LookupThread.Stop();
 
 	// Wait for the LibEvent event loop to terminate:
 	event_base_loopbreak(m_EventBase);
 	m_EventLoopThread.join();
 
-	// Remove all objects:
+	// Close all open connections:
 	{
 		cCSLock Lock(m_CS);
-		m_Connections.clear();
-		m_Servers.clear();
-		m_HostnameLookups.clear();
-		m_IPLookups.clear();
+		// Must take copies because Close will modify lists
+		auto Conns = m_Connections;
+		for (auto & Conn : Conns)
+		{
+			Conn->Close();
+		}
+
+		auto Servers = m_Servers;
+		for (auto & Server : Servers)
+		{
+			Server->Close();
+		}
+
+		// Closed handles should have removed themself
+		ASSERT(m_Connections.empty());
+		ASSERT(m_Servers.empty());
 	}
 
 	// Free the underlying LibEvent objects:
-	evdns_base_free(m_DNSBase, true);
 	event_base_free(m_EventBase);
 
 	libevent_global_shutdown();
+
+	// Set the HasTerminated flag:
+	// (Only set the flag after everything has been removed, to avoid the random failures in the Google-test, caused by links terminating after this flag was set)
+	m_HasTerminated = true;
 }
 
 
@@ -141,72 +160,29 @@ void cNetworkSingleton::LogCallback(int a_Severity, const char * a_Msg)
 
 void cNetworkSingleton::RunEventLoop(cNetworkSingleton * a_Self)
 {
+	auto timer = evtimer_new(a_Self->m_EventBase, SignalizeStartup, a_Self);
+	timeval timeout{};  // Zero timeout - execute immediately
+	evtimer_add(timer, &timeout);
 	event_base_loop(a_Self->m_EventBase, EVLOOP_NO_EXIT_ON_EMPTY);
+	event_free(timer);
 }
 
 
 
 
 
-void cNetworkSingleton::AddHostnameLookup(cHostnameLookupPtr a_HostnameLookup)
+void cNetworkSingleton::SignalizeStartup(evutil_socket_t a_Socket, short a_Events, void * a_Self)
 {
-	ASSERT(!m_HasTerminated);
-	cCSLock Lock(m_CS);
-	m_HostnameLookups.push_back(a_HostnameLookup);
+	auto self = static_cast<cNetworkSingleton *>(a_Self);
+	ASSERT(self != nullptr);
+	self->m_StartupEvent.Set();
 }
 
 
 
 
 
-void cNetworkSingleton::RemoveHostnameLookup(const cHostnameLookup * a_HostnameLookup)
-{
-	ASSERT(!m_HasTerminated);
-	cCSLock Lock(m_CS);
-	for (auto itr = m_HostnameLookups.begin(), end = m_HostnameLookups.end(); itr != end; ++itr)
-	{
-		if (itr->get() == a_HostnameLookup)
-		{
-			m_HostnameLookups.erase(itr);
-			return;
-		}
-	}  // for itr - m_HostnameLookups[]
-}
-
-
-
-
-
-void cNetworkSingleton::AddIPLookup(cIPLookupPtr a_IPLookup)
-{
-	ASSERT(!m_HasTerminated);
-	cCSLock Lock(m_CS);
-	m_IPLookups.push_back(a_IPLookup);
-}
-
-
-
-
-
-void cNetworkSingleton::RemoveIPLookup(const cIPLookup * a_IPLookup)
-{
-	ASSERT(!m_HasTerminated);
-	cCSLock Lock(m_CS);
-	for (auto itr = m_IPLookups.begin(), end = m_IPLookups.end(); itr != end; ++itr)
-	{
-		if (itr->get() == a_IPLookup)
-		{
-			m_IPLookups.erase(itr);
-			return;
-		}
-	}  // for itr - m_IPLookups[]
-}
-
-
-
-
-
-void cNetworkSingleton::AddLink(cTCPLinkImplPtr a_Link)
+void cNetworkSingleton::AddLink(cTCPLinkPtr a_Link)
 {
 	ASSERT(!m_HasTerminated);
 	cCSLock Lock(m_CS);
@@ -217,7 +193,7 @@ void cNetworkSingleton::AddLink(cTCPLinkImplPtr a_Link)
 
 
 
-void cNetworkSingleton::RemoveLink(const cTCPLinkImpl * a_Link)
+void cNetworkSingleton::RemoveLink(const cTCPLink * a_Link)
 {
 	ASSERT(!m_HasTerminated);
 	cCSLock Lock(m_CS);
@@ -235,7 +211,7 @@ void cNetworkSingleton::RemoveLink(const cTCPLinkImpl * a_Link)
 
 
 
-void cNetworkSingleton::AddServer(cServerHandleImplPtr a_Server)
+void cNetworkSingleton::AddServer(cServerHandlePtr a_Server)
 {
 	ASSERT(!m_HasTerminated);
 	cCSLock Lock(m_CS);
@@ -246,7 +222,7 @@ void cNetworkSingleton::AddServer(cServerHandleImplPtr a_Server)
 
 
 
-void cNetworkSingleton::RemoveServer(const cServerHandleImpl * a_Server)
+void cNetworkSingleton::RemoveServer(const cServerHandle * a_Server)
 {
 	ASSERT(!m_HasTerminated);
 	cCSLock Lock(m_CS);

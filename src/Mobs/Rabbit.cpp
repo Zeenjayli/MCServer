@@ -10,7 +10,20 @@
 
 
 cRabbit::cRabbit(void) :
-	super("Rabbit", mtRabbit, "mob.rabbit.idle", "mob.rabbit.death", 0.82, 0.68)
+	cRabbit(static_cast<eRabbitType>(GetRandomProvider().RandInt<UInt8>(
+		static_cast<UInt8>(eRabbitType::SaltAndPepper)  // Max possible Rabbit-Type
+	)), 0)
+{
+}
+
+
+
+
+
+cRabbit::cRabbit(eRabbitType Type, int MoreCarrotTicks) :
+	super("Rabbit", mtRabbit, "entity.rabbit.hurt", "entity.rabbit.death", 0.82, 0.68),
+	m_Type(Type),
+	m_MoreCarrotTicks(MoreCarrotTicks)
 {
 }
 
@@ -20,7 +33,12 @@ cRabbit::cRabbit(void) :
 
 void cRabbit::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 {
-	int LootingLevel = 0;
+	if (IsBaby())
+	{
+		return;  // Babies don't drop items
+	}
+
+	unsigned int LootingLevel = 0;
 	if (a_Killer != nullptr)
 	{
 		LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);

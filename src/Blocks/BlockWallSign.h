@@ -2,29 +2,35 @@
 #pragma once
 
 #include "BlockHandler.h"
-#include "../Entities/Player.h"
-#include "Chunk.h"
+#include "../Chunk.h"
 
 
 
 
 
-class cBlockWallSignHandler :
+class cBlockWallSignHandler:
 	public cBlockHandler
 {
-	typedef cBlockHandler super;
+	using super = cBlockHandler;
 
 public:
-	cBlockWallSignHandler(BLOCKTYPE a_BlockType) :
+
+	cBlockWallSignHandler(BLOCKTYPE a_BlockType):
 		super(a_BlockType)
 	{
 	}
 
 
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
+
+
+
+	virtual cItems ConvertToPickups(NIBBLETYPE a_BlockMeta, cBlockEntity * a_BlockEntity, const cEntity * a_Digger, const cItem * a_Tool) override
 	{
-		a_Pickups.push_back(cItem(E_ITEM_SIGN, 1, 0));
+		return cItem(E_ITEM_SIGN, 1, 0);
 	}
+
+
+
 
 
 	virtual bool CanBeAt(cChunkInterface & a_ChunkInterface, int a_RelX, int a_RelY, int a_RelZ, const cChunk & a_Chunk) override
@@ -32,10 +38,13 @@ public:
 		int BlockX = (a_Chunk.GetPosX() * cChunkDef::Width) + a_RelX;
 		int BlockZ = (a_Chunk.GetPosZ() * cChunkDef::Width) + a_RelZ;
 		GetBlockCoordsBehindTheSign(a_Chunk.GetMeta(a_RelX, a_RelY, a_RelZ), BlockX, BlockZ);
-		BLOCKTYPE Type = a_ChunkInterface.GetBlock(BlockX, a_RelY, BlockZ);
+		BLOCKTYPE Type = a_ChunkInterface.GetBlock({BlockX, a_RelY, BlockZ});
 
 		return ((Type == E_BLOCK_WALLSIGN) || (Type == E_BLOCK_SIGN_POST) || cBlockInfo::IsSolid(Type));
 	}
+
+
+
 
 
 	static void GetBlockCoordsBehindTheSign(NIBBLETYPE a_BlockMeta, int & a_BlockX, int & a_BlockZ)
@@ -51,20 +60,35 @@ public:
 	}
 
 
+
+
+
 	static NIBBLETYPE DirectionToMetaData(eBlockFace a_Direction)
 	{
 		switch (a_Direction)
 		{
-			case 0x2: return 0x2;
-			case 0x3: return 0x3;
-			case 0x4: return 0x4;
-			case 0x5: return 0x5;
-			default:
+			case BLOCK_FACE_ZM: return 0x02;
+			case BLOCK_FACE_ZP: return 0x03;
+			case BLOCK_FACE_XM: return 0x04;
+			case BLOCK_FACE_XP: return 0x05;
+			case BLOCK_FACE_NONE:
+			case BLOCK_FACE_YP:
+			case BLOCK_FACE_YM:
 			{
 				break;
 			}
 		}
-		return 0x2;
+		return 0x02;
+	}
+
+
+
+
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 13;
 	}
 } ;
 

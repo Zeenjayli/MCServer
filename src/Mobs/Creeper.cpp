@@ -11,7 +11,7 @@
 
 
 cCreeper::cCreeper(void) :
-	super("Creeper", mtCreeper, "mob.creeper.say", "mob.creeper.say", 0.6, 1.8),
+	super("Creeper", mtCreeper, "entity.creeper.hurt", "entity.creeper.death", 0.6, 1.8),
 	m_bIsBlowing(false),
 	m_bIsCharged(false),
 	m_BurnedWithFlintAndSteel(false),
@@ -26,12 +26,20 @@ cCreeper::cCreeper(void) :
 void cCreeper::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
 	super::Tick(a_Dt, a_Chunk);
-
-	if (!ReachedFinalDestination() && !m_BurnedWithFlintAndSteel)
+	if (!IsTicking())
 	{
-		m_ExplodingTimer = 0;
-		m_bIsBlowing = false;
-		m_World->BroadcastEntityMetadata(*this);
+		// The base class tick destroyed us
+		return;
+	}
+
+	if (((GetTarget() == nullptr) || !TargetIsInRange()) && !m_BurnedWithFlintAndSteel)
+	{
+		if (m_bIsBlowing)
+		{
+			m_ExplodingTimer = 0;
+			m_bIsBlowing = false;
+			m_World->BroadcastEntityMetadata(*this);
+		}
 	}
 	else
 	{
@@ -40,7 +48,7 @@ void cCreeper::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 			m_ExplodingTimer += 1;
 		}
 
-		if (m_ExplodingTimer == 30)
+		if ((m_ExplodingTimer == 30) && (GetHealth() > 0.0))  // only explode when not already dead
 		{
 			m_World->DoExplosionAt((m_bIsCharged ? 5 : 3), GetPosX(), GetPosY(), GetPosZ(), false, esMonster, this);
 			Destroy();  // Just in case we aren't killed by the explosion
@@ -60,7 +68,7 @@ void cCreeper::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 		return;
 	}
 
-	int LootingLevel = 0;
+	unsigned int LootingLevel = 0;
 	if (a_Killer != nullptr)
 	{
 		LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);
@@ -71,23 +79,18 @@ void cCreeper::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 	if (
 		(a_Killer != nullptr) &&
 		a_Killer->IsProjectile() &&
-		((reinterpret_cast<cProjectileEntity *>(a_Killer))->GetCreatorUniqueID() != cEntity::INVALID_ID))
+		((static_cast<cProjectileEntity *>(a_Killer))->GetCreatorUniqueID() != cEntity::INVALID_ID))
 	{
-		class cProjectileCreatorCallback : public cEntityCallback
-		{
-		public:
-			cProjectileCreatorCallback(void) {}
-
-			virtual bool Item(cEntity * a_Entity) override
+		auto ProjectileCreatorCallback = [](cEntity & a_Entity)
 			{
-				if (a_Entity->IsMob() && ((reinterpret_cast<cMonster *>(a_Entity))->GetMobType() == mtSkeleton))
+				if (a_Entity.IsMob() && ((static_cast<cMonster &>(a_Entity)).GetMobType() == mtSkeleton))
 				{
 					return true;
 				}
 				return false;
-			}
-		} PCC;
-		if (GetWorld()->DoWithEntityByID((reinterpret_cast<cProjectileEntity *>(a_Killer))->GetCreatorUniqueID(), PCC))
+			};
+
+		if (GetWorld()->DoWithEntityByID(static_cast<cProjectileEntity *>(a_Killer)->GetCreatorUniqueID(), ProjectileCreatorCallback))
 		{
 			AddRandomDropItem(a_Drops, 1, 1, static_cast<short>(m_World->GetTickRandomNumber(11) + E_ITEM_FIRST_DISC));
 		}
@@ -118,16 +121,19 @@ bool cCreeper::DoTakeDamage(TakeDamageInfo & a_TDI)
 
 
 
-void cCreeper::Attack(std::chrono::milliseconds a_Dt)
+bool cCreeper::Attack(std::chrono::milliseconds a_Dt)
 {
 	UNUSED(a_Dt);
 
 	if (!m_bIsBlowing)
 	{
-		m_World->BroadcastSoundEffect("game.tnt.primed", GetPosX(), GetPosY(), GetPosZ(), 1.f, (float)(0.75 + ((float)((GetUniqueID() * 23) % 32)) / 64));
+		m_World->BroadcastSoundEffect("entity.creeper.primed", GetPosition(), 1.f, (0.75f + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
 		m_bIsBlowing = true;
 		m_World->BroadcastEntityMetadata(*this);
+
+		return true;
 	}
+	return false;
 }
 
 
@@ -136,16 +142,17 @@ void cCreeper::Attack(std::chrono::milliseconds a_Dt)
 
 void cCreeper::OnRightClicked(cPlayer & a_Player)
 {
+	super::OnRightClicked(a_Player);
+
 	if ((a_Player.GetEquippedItem().m_ItemType == E_ITEM_FLINT_AND_STEEL))
 	{
 		if (!a_Player.IsGameModeCreative())
 		{
 			a_Player.UseEquippedItem();
 		}
-		m_World->BroadcastSoundEffect("game.tnt.primed", GetPosX(), GetPosY(), GetPosZ(), 1.f, (float)(0.75 + ((float)((GetUniqueID() * 23) % 32)) / 64));
+		m_World->BroadcastSoundEffect("entity.creeper.primed", GetPosition(), 1.f, (0.75f + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
 		m_bIsBlowing = true;
 		m_World->BroadcastEntityMetadata(*this);
 		m_BurnedWithFlintAndSteel = true;
 	}
 }
-

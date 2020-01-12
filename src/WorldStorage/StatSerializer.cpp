@@ -11,16 +11,17 @@
 
 
 
-cStatSerializer::cStatSerializer(const AString & a_WorldName, const AString & a_PlayerName, cStatManager * a_Manager)
+cStatSerializer::cStatSerializer(const AString & a_WorldName, const AString & a_PlayerName, const AString & a_FileName, cStatManager * a_Manager)
 	: m_Manager(a_Manager)
 {
 	// Even though stats are shared between worlds, they are (usually) saved
 	// inside the folder of the default world.
 
 	AString StatsPath;
-	Printf(StatsPath, "%s%cstats", a_WorldName.c_str(), cFile::PathSeparator);
+	Printf(StatsPath, "%s%cstats", a_WorldName.c_str(), cFile::PathSeparator());
 
-	m_Path = StatsPath + "/" + a_PlayerName + ".json";
+	m_LegacyPath = StatsPath + "/" + a_PlayerName + ".json";
+	m_Path = StatsPath + "/" + a_FileName + ".json";
 
 	// Ensure that the directory exists.
 	cFile::CreateFolder(FILE_IO_PREFIX + StatsPath);
@@ -35,7 +36,11 @@ bool cStatSerializer::Load(void)
 	AString Data = cFile::ReadWholeFile(FILE_IO_PREFIX + m_Path);
 	if (Data.empty())
 	{
-		return false;
+		Data = cFile::ReadWholeFile(FILE_IO_PREFIX + m_LegacyPath);
+		if (Data.empty())
+		{
+			return false;
+		}
 	}
 
 	Json::Value Root;
@@ -79,13 +84,13 @@ bool cStatSerializer::Save(void)
 
 void cStatSerializer::SaveStatToJSON(Json::Value & a_Out)
 {
-	for (unsigned int i = 0; i < (unsigned int)statCount; ++i)
+	for (unsigned int i = 0; i < static_cast<unsigned int>(statCount); ++i)
 	{
-		StatValue Value = m_Manager->GetValue((eStatistic) i);
+		StatValue Value = m_Manager->GetValue(static_cast<eStatistic>(i));
 
 		if (Value != 0)
 		{
-			const AString & StatName = cStatInfo::GetName((eStatistic) i);
+			const AString & StatName = cStatInfo::GetName(static_cast<eStatistic>(i));
 
 			a_Out[StatName] = Value;
 		}
@@ -102,7 +107,7 @@ bool cStatSerializer::LoadStatFromJSON(const Json::Value & a_In)
 {
 	m_Manager->Reset();
 
-	for (Json::ValueIterator it = a_In.begin() ; it != a_In.end() ; ++it)
+	for (Json::Value::const_iterator it = a_In.begin() ; it != a_In.end() ; ++it)
 	{
 		AString StatName = it.key().asString();
 
@@ -114,7 +119,7 @@ bool cStatSerializer::LoadStatFromJSON(const Json::Value & a_In)
 			continue;
 		}
 
-		Json::Value & Node = *it;
+		const Json::Value & Node = *it;
 
 		if (Node.isInt())
 		{

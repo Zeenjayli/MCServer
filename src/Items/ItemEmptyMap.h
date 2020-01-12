@@ -1,13 +1,6 @@
 
-// ItemEmptyMap.h
-
-
-
-
-
 #pragma once
 
-#include "../Entities/Entity.h"
 #include "../Item.h"
 
 
@@ -20,7 +13,7 @@ class cItemEmptyMapHandler :
 	typedef cItemHandler super;
 
 	static const unsigned int DEFAULT_SCALE = 0;
-	
+
 public:
 	cItemEmptyMapHandler() :
 		super(E_ITEM_EMPTY_MAP)
@@ -43,8 +36,8 @@ public:
 
 		const int RegionWidth = cChunkDef::Width * 8;
 
-		int CenterX = (int)(floor(a_Player->GetPosX() / (float) RegionWidth) * RegionWidth);
-		int CenterZ = (int)(floor(a_Player->GetPosZ() / (float) RegionWidth) * RegionWidth);
+		int CenterX = FloorC(a_Player->GetPosX() / RegionWidth) * RegionWidth + (RegionWidth / 2);
+		int CenterZ = FloorC(a_Player->GetPosZ() / RegionWidth) * RegionWidth + (RegionWidth / 2);
 
 		cMap * NewMap = a_World->GetMapManager().CreateMap(CenterX, CenterZ, DEFAULT_SCALE);
 
@@ -60,12 +53,8 @@ public:
 			return true;
 		}
 
-		a_Player->GetInventory().AddItem(cItem(E_ITEM_MAP, 1, (short)(NewMap->GetID() & 0x7fff)), true, true);
+		a_Player->GetInventory().AddItem(cItem(E_ITEM_MAP, 1, static_cast<short>(NewMap->GetID() & 0x7fff)));
 
 		return true;
 	}
 } ;
-
-
-
-

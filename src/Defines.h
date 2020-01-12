@@ -1,16 +1,12 @@
 
 #pragma once
 
-#include <limits>
-#include <cmath>
 
 
 
 
-
-/// List of slot numbers, used for inventory-painting
+/** List of slot numbers, used for inventory-painting */
 typedef std::vector<int> cSlotNums;
-
 
 
 
@@ -18,7 +14,7 @@ typedef std::vector<int> cSlotNums;
 
 // tolua_begin
 
-/// Experience Orb setup
+/** Experience Orb setup */
 enum
 {
 	// Open to suggestion on naming convention here :)
@@ -29,16 +25,16 @@ enum
 
 
 
-/// Block face constants, used in PlayerDigging and PlayerBlockPlacement packets and bbox collision calc
+/** Block face constants, used in PlayerDigging and PlayerBlockPlacement packets and bbox collision calc */
 enum eBlockFace
 {
 	BLOCK_FACE_NONE = -1,  // Interacting with no block face - swinging the item in the air
-	BLOCK_FACE_XM   = 4,   // Interacting with the X- face of the block
-	BLOCK_FACE_XP   = 5,   // Interacting with the X+ face of the block
-	BLOCK_FACE_YM   = 0,   // Interacting with the Y- face of the block
-	BLOCK_FACE_YP   = 1,   // Interacting with the Y+ face of the block
-	BLOCK_FACE_ZM   = 2,   // Interacting with the Z- face of the block
-	BLOCK_FACE_ZP   = 3,   // Interacting with the Z+ face of the block
+	BLOCK_FACE_XM   =  4,  // Interacting with the X- face of the block
+	BLOCK_FACE_XP   =  5,  // Interacting with the X+ face of the block
+	BLOCK_FACE_YM   =  0,  // Interacting with the Y- face of the block
+	BLOCK_FACE_YP   =  1,  // Interacting with the Y+ face of the block
+	BLOCK_FACE_ZM   =  2,  // Interacting with the Z- face of the block
+	BLOCK_FACE_ZP   =  3,  // Interacting with the Z+ face of the block
 
 	// Synonyms using the (deprecated) world directions:
 	BLOCK_FACE_BOTTOM = BLOCK_FACE_YM,  // Interacting with the bottom   face of the block
@@ -47,28 +43,33 @@ enum eBlockFace
 	BLOCK_FACE_SOUTH  = BLOCK_FACE_ZP,  // Interacting with the southern face of the block
 	BLOCK_FACE_WEST   = BLOCK_FACE_XM,  // Interacting with the western  face of the block
 	BLOCK_FACE_EAST   = BLOCK_FACE_XP,  // Interacting with the eastern  face of the block
+
+	// Bounds, used for range-checking:
+	BLOCK_FACE_MIN = -1,
+	BLOCK_FACE_MAX =  5,
 } ;
 
 
 
 
 
-/// PlayerDigging status constants
+/** PlayerDigging status constants */
 enum
 {
-	DIG_STATUS_STARTED   = 0,
-	DIG_STATUS_CANCELLED = 1,
-	DIG_STATUS_FINISHED  = 2,
-	DIG_STATUS_DROP_STACK= 3,
-	DIG_STATUS_DROP_HELD = 4,
-	DIG_STATUS_SHOOT_EAT = 5,
+	DIG_STATUS_STARTED           = 0,
+	DIG_STATUS_CANCELLED         = 1,
+	DIG_STATUS_FINISHED          = 2,
+	DIG_STATUS_DROP_STACK        = 3,
+	DIG_STATUS_DROP_HELD         = 4,
+	DIG_STATUS_SHOOT_EAT         = 5,
+	DIG_STATUS_SWAP_ITEM_IN_HAND = 6,
 } ;
 
 
 
 
 
-/// Individual actions sent in the WindowClick packet
+/** Individual actions sent in the WindowClick packet */
 enum eClickAction
 {
 	// Sorted by occurrence in the 1.5 protocol
@@ -94,10 +95,13 @@ enum eClickAction
 	caRightClickOutsideHoldNothing,
 	caLeftPaintBegin,
 	caRightPaintBegin,
+	caMiddlePaintBegin,
 	caLeftPaintProgress,
 	caRightPaintProgress,
+	caMiddlePaintProgress,
 	caLeftPaintEnd,
 	caRightPaintEnd,
+	caMiddlePaintEnd,
 	caDblClick,
 	// Add new actions here
 	caUnknown = 255,
@@ -133,6 +137,17 @@ enum eGameMode
 
 
 
+enum eChatType
+{
+	ctChatBox        = 0,
+	ctSystem         = 1,
+	ctAboveActionBar = 2,
+} ;
+
+
+
+
+
 enum eWeather
 {
 	eWeather_Sunny        = 0,
@@ -157,6 +172,7 @@ enum eMobHeadType
 	SKULL_TYPE_ZOMBIE      = 2,
 	SKULL_TYPE_PLAYER      = 3,
 	SKULL_TYPE_CREEPER     = 4,
+	SKULL_TYPE_DRAGON      = 5,
 } ;
 
 
@@ -187,7 +203,43 @@ enum eMobHeadRotation
 
 
 
-inline const char * ClickActionToString(eClickAction a_ClickAction)
+enum eHand
+{
+	hMain = 0,
+	hOff = 1,
+} ;
+
+
+
+
+
+enum eMainHand
+{
+	mhLeft = 0,
+	mhRight = 1,
+} ;
+
+
+
+
+
+enum eSkinPart
+{
+	spCape = 0x01,
+	spJacket = 0x02,
+	spLeftSleeve = 0x04,
+	spRightSleeve = 0x08,
+	spLeftPants = 0x10,
+	spRightPants = 0x20,
+	spHat = 0x40,
+	spMask = 0x7F,
+};
+
+
+
+
+
+inline const char * ClickActionToString(int a_ClickAction)
 {
 	switch (a_ClickAction)
 	{
@@ -213,16 +265,18 @@ inline const char * ClickActionToString(eClickAction a_ClickAction)
 		case caRightClickOutsideHoldNothing: return "caRightClickOutsideHoldNothing";
 		case caLeftPaintBegin:               return "caLeftPaintBegin";
 		case caRightPaintBegin:              return "caRightPaintBegin";
+		case caMiddlePaintBegin:             return "caMiddlePaintBegin";
 		case caLeftPaintProgress:            return "caLeftPaintProgress";
 		case caRightPaintProgress:           return "caRightPaintProgress";
+		case caMiddlePaintProgress:          return "caMiddlePaintProgress";
 		case caLeftPaintEnd:                 return "caLeftPaintEnd";
 		case caRightPaintEnd:                return "caRightPaintEnd";
+		case caMiddlePaintEnd:               return "caMiddlePaintEnd";
 		case caDblClick:                     return "caDblClick";
 
 		case caUnknown:                      return "caUnknown";
 	}
-	ASSERT(!"Unknown click action");
-	return "caUnknown";
+	UNREACHABLE("Unknown click action");
 }
 
 
@@ -238,8 +292,14 @@ inline eBlockFace MirrorBlockFaceY(eBlockFace a_BlockFace)
 		case BLOCK_FACE_XP: return BLOCK_FACE_XM;
 		case BLOCK_FACE_ZM: return BLOCK_FACE_ZP;
 		case BLOCK_FACE_ZP: return BLOCK_FACE_ZM;
-		default: return a_BlockFace;
+		case BLOCK_FACE_NONE:
+		case BLOCK_FACE_YM:
+		case BLOCK_FACE_YP:
+		{
+			return a_BlockFace;
+		}
 	}
+	UNREACHABLE("Unsupported block face");
 }
 
 
@@ -255,8 +315,14 @@ inline eBlockFace RotateBlockFaceCCW(eBlockFace a_BlockFace)
 		case BLOCK_FACE_XP: return BLOCK_FACE_ZM;
 		case BLOCK_FACE_ZM: return BLOCK_FACE_XM;
 		case BLOCK_FACE_ZP: return BLOCK_FACE_XP;
-		default: return a_BlockFace;
+		case BLOCK_FACE_NONE:
+		case BLOCK_FACE_YM:
+		case BLOCK_FACE_YP:
+		{
+			return a_BlockFace;
+		}
 	}
+	UNREACHABLE("Unsupported block face");
 }
 
 
@@ -271,23 +337,37 @@ inline eBlockFace RotateBlockFaceCW(eBlockFace a_BlockFace)
 		case BLOCK_FACE_XP: return BLOCK_FACE_ZP;
 		case BLOCK_FACE_ZM: return BLOCK_FACE_XP;
 		case BLOCK_FACE_ZP: return BLOCK_FACE_XM;
-		default: return a_BlockFace;
+		case BLOCK_FACE_NONE:
+		case BLOCK_FACE_YM:
+		case BLOCK_FACE_YP:
+		{
+			return a_BlockFace;
+		}
 	}
+	UNREACHABLE("Unsupported block face");
 }
+
+
+
+
 
 inline eBlockFace ReverseBlockFace(eBlockFace  a_BlockFace)
 {
 	switch (a_BlockFace)
 	{
-		case BLOCK_FACE_YP: return BLOCK_FACE_YM;
-		case BLOCK_FACE_XP: return BLOCK_FACE_XM;
-		case BLOCK_FACE_ZP: return BLOCK_FACE_ZM;
-		case BLOCK_FACE_YM: return BLOCK_FACE_YP;
-		case BLOCK_FACE_XM: return BLOCK_FACE_XP;
-		case BLOCK_FACE_ZM: return BLOCK_FACE_ZP;
-		default: return a_BlockFace;
+		case BLOCK_FACE_YP:   return BLOCK_FACE_YM;
+		case BLOCK_FACE_XP:   return BLOCK_FACE_XM;
+		case BLOCK_FACE_ZP:   return BLOCK_FACE_ZM;
+		case BLOCK_FACE_YM:   return BLOCK_FACE_YP;
+		case BLOCK_FACE_XM:   return BLOCK_FACE_XP;
+		case BLOCK_FACE_ZM:   return BLOCK_FACE_ZP;
+		case BLOCK_FACE_NONE: return a_BlockFace;
 	}
+	UNREACHABLE("Unsupported block face");
 }
+
+
+
 
 
 /** Returns the textual representation of the BlockFace constant. */
@@ -303,10 +383,7 @@ inline AString BlockFaceToString(eBlockFace a_BlockFace)
 		case BLOCK_FACE_ZP: return "BLOCK_FACE_ZP";
 		case BLOCK_FACE_NONE: return "BLOCK_FACE_NONE";
 	}
-	// clang optimisises this line away then warns that it has done so.
-	#if !defined(__clang__)
-	return Printf("Unknown BLOCK_FACE: %d", a_BlockFace);
-	#endif
+	UNREACHABLE("Unsupported block face");
 }
 
 
@@ -316,8 +393,11 @@ inline AString BlockFaceToString(eBlockFace a_BlockFace)
 inline bool IsValidBlock(int a_BlockType)
 {
 	if (
+		(
 		(a_BlockType > -1) &&
 		(a_BlockType <= E_BLOCK_MAX_TYPE_ID)
+		) ||
+		(a_BlockType == 255)  // the blocks 253-254 don't exist yet -> https://minecraft.gamepedia.com/Data_values#Block_IDs
 	)
 	{
 		return true;
@@ -362,9 +442,30 @@ inline bool IsBlockWater(BLOCKTYPE a_BlockType)
 
 
 
+inline bool IsBlockIce(BLOCKTYPE a_BlockType)
+{
+	switch (a_BlockType)
+	{
+		case E_BLOCK_ICE:
+		case E_BLOCK_PACKED_ICE:
+		case E_BLOCK_FROSTED_ICE:
+		{
+			return true;
+		}
+		default:
+		{
+			return false;
+		}
+	}
+}
+
+
+
+
+
 inline bool IsBlockWaterOrIce(BLOCKTYPE a_BlockType)
 {
-	return (IsBlockWater(a_BlockType) || (a_BlockType == E_BLOCK_ICE));
+	return (IsBlockWater(a_BlockType) || IsBlockIce(a_BlockType));
 }
 
 
@@ -414,12 +515,343 @@ inline bool IsBlockTypeOfDirt(BLOCKTYPE a_BlockType)
 		case E_BLOCK_DIRT:
 		case E_BLOCK_GRASS:
 		case E_BLOCK_FARMLAND:
+		case E_BLOCK_GRASS_PATH:
 		{
 			return true;
 		}
 	}
 	return false;
 }
+
+
+
+
+inline bool IsBlockFence(BLOCKTYPE a_BlockType)
+{
+	switch (a_BlockType)
+	{
+		case E_BLOCK_ACACIA_FENCE:
+		case E_BLOCK_ACACIA_FENCE_GATE:
+		case E_BLOCK_BIRCH_FENCE:
+		case E_BLOCK_BIRCH_FENCE_GATE:
+		case E_BLOCK_COBBLESTONE_WALL:
+		case E_BLOCK_DARK_OAK_FENCE:
+		case E_BLOCK_DARK_OAK_FENCE_GATE:
+		case E_BLOCK_FENCE:
+		case E_BLOCK_JUNGLE_FENCE:
+		case E_BLOCK_JUNGLE_FENCE_GATE:
+		case E_BLOCK_NETHER_BRICK_FENCE:
+		case E_BLOCK_OAK_FENCE_GATE:
+		case E_BLOCK_SPRUCE_FENCE:
+		case E_BLOCK_SPRUCE_FENCE_GATE:
+		{
+			return true;
+		}
+		default:
+		{
+			return false;
+		}
+	}
+}
+
+
+
+
+
+inline bool IsBlockMaterialWood(BLOCKTYPE a_BlockType)
+{
+	switch (a_BlockType)
+	{
+		case E_BLOCK_PLANKS:
+		case E_BLOCK_LOG:
+		case E_BLOCK_NOTE_BLOCK:
+		case E_BLOCK_BOOKCASE:
+		case E_BLOCK_OAK_WOOD_STAIRS:
+		case E_BLOCK_CHEST:
+		case E_BLOCK_CRAFTING_TABLE:
+		case E_BLOCK_SIGN_POST:
+		case E_BLOCK_OAK_DOOR:
+		case E_BLOCK_WALLSIGN:
+		case E_BLOCK_WOODEN_PRESSURE_PLATE:
+		case E_BLOCK_JUKEBOX:
+		case E_BLOCK_FENCE:
+		case E_BLOCK_TRAPDOOR:
+		case E_BLOCK_HUGE_BROWN_MUSHROOM:
+		case E_BLOCK_HUGE_RED_MUSHROOM:
+		case E_BLOCK_OAK_FENCE_GATE:
+		case E_BLOCK_DOUBLE_WOODEN_SLAB:
+		case E_BLOCK_WOODEN_SLAB:
+		case E_BLOCK_SPRUCE_WOOD_STAIRS:
+		case E_BLOCK_BIRCH_WOOD_STAIRS:
+		case E_BLOCK_JUNGLE_WOOD_STAIRS:
+		case E_BLOCK_TRAPPED_CHEST:
+		case E_BLOCK_DAYLIGHT_SENSOR:
+		case E_BLOCK_NEW_LOG:
+		case E_BLOCK_ACACIA_WOOD_STAIRS:
+		case E_BLOCK_DARK_OAK_WOOD_STAIRS:
+		case E_BLOCK_STANDING_BANNER:
+		case E_BLOCK_WALL_BANNER:
+		case E_BLOCK_INVERTED_DAYLIGHT_SENSOR:
+		case E_BLOCK_SPRUCE_FENCE_GATE:
+		case E_BLOCK_BIRCH_FENCE_GATE:
+		case E_BLOCK_JUNGLE_FENCE_GATE:
+		case E_BLOCK_DARK_OAK_FENCE_GATE:
+		case E_BLOCK_ACACIA_FENCE_GATE:
+		case E_BLOCK_SPRUCE_FENCE:
+		case E_BLOCK_BIRCH_FENCE:
+		case E_BLOCK_JUNGLE_FENCE:
+		case E_BLOCK_DARK_OAK_FENCE:
+		case E_BLOCK_ACACIA_FENCE:
+		case E_BLOCK_SPRUCE_DOOR:
+		case E_BLOCK_BIRCH_DOOR:
+		case E_BLOCK_JUNGLE_DOOR:
+		case E_BLOCK_ACACIA_DOOR:
+		case E_BLOCK_DARK_OAK_DOOR:
+		{
+			return true;
+		}
+		default:
+		{
+			return false;
+		}
+	}
+}
+
+
+
+
+
+inline bool IsBlockMaterialPlants(BLOCKTYPE a_BlockType)
+{
+	switch (a_BlockType)
+	{
+		case E_BLOCK_SAPLING:
+		case E_BLOCK_DANDELION:
+		case E_BLOCK_FLOWER:
+		case E_BLOCK_BROWN_MUSHROOM:
+		case E_BLOCK_RED_MUSHROOM:
+		case E_BLOCK_CROPS:
+		case E_BLOCK_REEDS:
+		case E_BLOCK_PUMPKIN_STEM:
+		case E_BLOCK_MELON_STEM:
+		case E_BLOCK_LILY_PAD:
+		case E_BLOCK_NETHER_WART:
+		case E_BLOCK_COCOA_POD:
+		case E_BLOCK_CARROTS:
+		case E_BLOCK_POTATOES:
+		case E_BLOCK_CHORUS_PLANT:
+		case E_BLOCK_CHORUS_FLOWER:
+		case E_BLOCK_BEETROOTS:
+		{
+			return true;
+		}
+		default:
+		{
+			return false;
+		}
+	}
+}
+
+
+
+
+
+inline bool IsBlockMaterialVine(BLOCKTYPE a_BlockType)
+{
+	switch (a_BlockType)
+	{
+		case E_BLOCK_TALL_GRASS:
+		case E_BLOCK_DEAD_BUSH:
+		case E_BLOCK_VINES:
+		case E_BLOCK_BIG_FLOWER:
+		{
+			return true;
+		}
+		default:
+		{
+			return false;
+		}
+	}
+}
+
+
+
+
+
+inline bool IsBlockMaterialIron(BLOCKTYPE a_BlockType)
+{
+	switch (a_BlockType)
+	{
+		case E_BLOCK_LAPIS_BLOCK:
+		case E_BLOCK_GOLD_BLOCK:
+		case E_BLOCK_IRON_BLOCK:
+		case E_BLOCK_DIAMOND_BLOCK:
+		case E_BLOCK_IRON_DOOR:
+		case E_BLOCK_IRON_BARS:
+		case E_BLOCK_BREWING_STAND:
+		case E_BLOCK_CAULDRON:
+		case E_BLOCK_EMERALD_BLOCK:
+		case E_BLOCK_COMMAND_BLOCK:
+		case E_BLOCK_LIGHT_WEIGHTED_PRESSURE_PLATE:
+		case E_BLOCK_HEAVY_WEIGHTED_PRESSURE_PLATE:
+		case E_BLOCK_BLOCK_OF_REDSTONE:
+		case E_BLOCK_HOPPER:
+		case E_BLOCK_IRON_TRAPDOOR:
+		case E_BLOCK_REPEATING_COMMAND_BLOCK:
+		case E_BLOCK_CHAIN_COMMAND_BLOCK:
+		case E_BLOCK_STRUCTURE_BLOCK:
+		{
+			return true;
+		}
+		default:
+		{
+			return false;
+		}
+	}
+}
+
+
+
+
+
+inline bool IsBlockMaterialAnvil(BLOCKTYPE a_BlockType)
+{
+	return (a_BlockType == E_BLOCK_ANVIL);
+}
+
+
+
+
+
+inline bool IsBlocksWeb(BLOCKTYPE a_BlockType)
+{
+	return (a_BlockType == E_BLOCK_COBWEB);
+}
+
+
+
+
+
+inline bool IsBlockMaterialLeaves(BLOCKTYPE a_BlockType)
+{
+	return (a_BlockType == E_BLOCK_LEAVES) || (a_BlockType == E_BLOCK_NEW_LEAVES);
+}
+
+
+
+
+
+inline bool IsBlocksWool(BLOCKTYPE a_BlockType)
+{
+	return (a_BlockType == E_BLOCK_WOOL);
+}
+
+
+
+
+
+inline bool IsBlockMaterialGourd(BLOCKTYPE a_BlockType)
+{
+	switch (a_BlockType)
+	{
+		case E_BLOCK_PUMPKIN:
+		case E_BLOCK_JACK_O_LANTERN:
+		case E_BLOCK_MELON:
+		{
+			return true;
+		}
+		default:
+		{
+			return false;
+		}
+	}
+}
+
+
+
+
+
+inline bool IsBlockMaterialCoral(BLOCKTYPE a_BlockType)
+{
+	return false;  // yes, there is no block in minecraft which belongs to this type.
+}
+
+
+
+
+
+inline bool IsBlockMaterialRock(BLOCKTYPE a_BlockType)
+{
+	switch (a_BlockType)
+	{
+		case E_BLOCK_STONE:
+		case E_BLOCK_COBBLESTONE:
+		case E_BLOCK_BEDROCK:
+		case E_BLOCK_GOLD_ORE:
+		case E_BLOCK_IRON_ORE:
+		case E_BLOCK_COAL_ORE:
+		case E_BLOCK_LAPIS_ORE:
+		case E_BLOCK_DISPENSER:
+		case E_BLOCK_SANDSTONE:
+		case E_BLOCK_DOUBLE_STONE_SLAB:
+		case E_BLOCK_STONE_SLAB:
+		case E_BLOCK_BRICK:
+		case E_BLOCK_MOSSY_COBBLESTONE:
+		case E_BLOCK_OBSIDIAN:
+		case E_BLOCK_MOB_SPAWNER:
+		case E_BLOCK_DIAMOND_ORE:
+		case E_BLOCK_FURNACE:
+		case E_BLOCK_LIT_FURNACE:
+		case E_BLOCK_COBBLESTONE_STAIRS:
+		case E_BLOCK_STONE_PRESSURE_PLATE:
+		case E_BLOCK_REDSTONE_ORE:
+		case E_BLOCK_REDSTONE_ORE_GLOWING:
+		case E_BLOCK_NETHERRACK:
+		case E_BLOCK_STONE_BRICKS:
+		case E_BLOCK_BRICK_STAIRS:
+		case E_BLOCK_STONE_BRICK_STAIRS:
+		case E_BLOCK_NETHER_BRICK:
+		case E_BLOCK_NETHER_BRICK_FENCE:
+		case E_BLOCK_NETHER_BRICK_STAIRS:
+		case E_BLOCK_ENCHANTMENT_TABLE:
+		case E_BLOCK_END_PORTAL_FRAME:
+		case E_BLOCK_END_STONE:
+		case E_BLOCK_SANDSTONE_STAIRS:
+		case E_BLOCK_EMERALD_ORE:
+		case E_BLOCK_ENDER_CHEST:
+		case E_BLOCK_COBBLESTONE_WALL:
+		case E_BLOCK_NETHER_QUARTZ_ORE:
+		case E_BLOCK_QUARTZ_BLOCK:
+		case E_BLOCK_QUARTZ_STAIRS:
+		case E_BLOCK_DROPPER:
+		case E_BLOCK_STAINED_CLAY:
+		case E_BLOCK_PRISMARINE_BLOCK:
+		case E_BLOCK_HARDENED_CLAY:
+		case E_BLOCK_BLOCK_OF_COAL:
+		case E_BLOCK_RED_SANDSTONE:
+		case E_BLOCK_RED_SANDSTONE_STAIRS:
+		case E_BLOCK_DOUBLE_RED_SANDSTONE_SLAB:
+		case E_BLOCK_RED_SANDSTONE_SLAB:
+		case E_BLOCK_PURPUR_BLOCK:
+		case E_BLOCK_PURPUR_PILLAR:
+		case E_BLOCK_PURPUR_STAIRS:
+		case E_BLOCK_PURPUR_DOUBLE_SLAB:
+		case E_BLOCK_PURPUR_SLAB:
+		case E_BLOCK_END_BRICKS:
+		case E_BLOCK_MAGMA:
+		case E_BLOCK_RED_NETHER_BRICK:
+		case E_BLOCK_BONE_BLOCK:
+		case E_BLOCK_OBSERVER:
+		{
+			return true;
+		}
+		default:
+		{
+			return false;
+		}
+	}
+}
+
 
 
 
@@ -436,7 +868,7 @@ inline void AddFaceDirection(int & a_BlockX, int & a_BlockY, int & a_BlockZ, eBl
 			case BLOCK_FACE_ZP: a_BlockZ++; break;
 			case BLOCK_FACE_XP: a_BlockX++; break;
 			case BLOCK_FACE_XM: a_BlockX--; break;
-			default:
+			case BLOCK_FACE_NONE:
 			{
 				LOGWARNING("%s: Unknown face: %d", __FUNCTION__, a_BlockFace);
 				ASSERT(!"AddFaceDirection(): Unknown face");
@@ -454,7 +886,7 @@ inline void AddFaceDirection(int & a_BlockX, int & a_BlockY, int & a_BlockZ, eBl
 			case BLOCK_FACE_ZP: a_BlockZ--; break;
 			case BLOCK_FACE_XP: a_BlockX--; break;
 			case BLOCK_FACE_XM: a_BlockX++; break;
-			default:
+			case BLOCK_FACE_NONE:
 			{
 				LOGWARNING("%s: Unknown inv face: %d", __FUNCTION__, a_BlockFace);
 				ASSERT(!"AddFaceDirection(): Unknown face");
@@ -472,7 +904,7 @@ inline void AddFaceDirection(int & a_BlockX, unsigned char & a_BlockY, int & a_B
 {
 	int Y = a_BlockY;
 	AddFaceDirection(a_BlockX, Y, a_BlockZ, a_BlockFace, a_bInverse);
-	a_BlockY = Clamp<unsigned char>(static_cast<unsigned char>(Y), 0, 255);
+	a_BlockY = Clamp<unsigned char>(static_cast<unsigned char>(Y), 0, cChunkDef::Height - 1);
 }
 
 
@@ -543,7 +975,7 @@ template <class T> inline T Diff(T a_Val1, T a_Val2)
 
 enum eMessageType
 {
-	// http://forum.mc-server.org/showthread.php?tid=1212
+	// https://forum.cuberite.org/thread-1212.html
 	// MessageType...
 
 	mtCustom,          // Send raw data without any processing
@@ -556,6 +988,7 @@ enum eMessageType
 	mtPrivateMessage,  // Player to player messaging identifier
 	mtJoin,            // A player has joined the server
 	mtLeave,           // A player has left the server
+	mtMaxPlusOne,      // The first invalid type, used for checking on LuaAPI boundaries
 
 	// Common aliases:
 	mtFail  = mtFailure,
@@ -703,6 +1136,19 @@ namespace ItemCategory
 
 
 
+	inline bool IsMinecart(short a_ItemType)
+	{
+		return (
+			(a_ItemType == E_ITEM_MINECART) ||
+			(a_ItemType == E_ITEM_CHEST_MINECART) ||
+			(a_ItemType == E_ITEM_FURNACE_MINECART) ||
+			(a_ItemType == E_ITEM_MINECART_WITH_TNT) ||
+			(a_ItemType == E_ITEM_MINECART_WITH_HOPPER)
+		);
+	}
+
+
+
 	inline bool IsArmor(short a_ItemType)
 	{
 		return (
@@ -711,6 +1157,25 @@ namespace ItemCategory
 			IsLeggings(a_ItemType) ||
 			IsBoots(a_ItemType)
 		);
+	}
+
+
+
+	inline bool IsHorseArmor(short a_ItemType)
+	{
+		switch (a_ItemType)
+		{
+			case E_ITEM_IRON_HORSE_ARMOR:
+			case E_ITEM_GOLD_HORSE_ARMOR:
+			case E_ITEM_DIAMOND_HORSE_ARMOR:
+			{
+				return true;
+			}
+			default:
+			{
+				return false;
+			}
+		}
 	}
 }
 

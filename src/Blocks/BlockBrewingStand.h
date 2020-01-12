@@ -1,29 +1,33 @@
 
 #pragma once
 
-#include "BlockHandler.h"
+#include "BlockEntity.h"
+#include "Mixins.h"
 
 
 
 
 
 class cBlockBrewingStandHandler :
-	public cBlockHandler
+	public cClearMetaOnDrop<cMetaRotator<cBlockEntityHandler, 0x07, 0x02, 0x05, 0x03, 0x04>>
 {
+	using super = cClearMetaOnDrop<cMetaRotator<cBlockEntityHandler, 0x07, 0x02, 0x05, 0x03, 0x04>>;
+
 public:
-	cBlockBrewingStandHandler(BLOCKTYPE a_BlockType)
-		: cBlockHandler(a_BlockType)
+
+	cBlockBrewingStandHandler(BLOCKTYPE a_BlockType):
+		super(a_BlockType)
 	{
 	}
 
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
-	{
-		a_Pickups.push_back(cItem(E_ITEM_BREWING_STAND, 1, 0));
-	}
 
-	virtual bool IsUseable() override
+
+
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
 	{
-		return true;
+		UNUSED(a_Meta);
+		return 6;
 	}
 } ;
 

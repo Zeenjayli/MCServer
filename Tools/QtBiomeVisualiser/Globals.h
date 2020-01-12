@@ -15,9 +15,9 @@
 	// Useful warnings from warning level 4:
 	#pragma warning(3 : 4127)  // Conditional expression is constant
 	#pragma warning(3 : 4189)  // Local variable is initialized but not referenced
-	#pragma warning(3 : 4245)  // Conversion from 'type1' to 'type2', signed/unsigned mismatch
+	#pragma warning(3 : 4245)  // Conversion from 'type1' to 'type2', signed / unsigned mismatch
 	#pragma warning(3 : 4310)  // Cast truncates constant value
-	#pragma warning(3 : 4389)  // Signed/unsigned mismatch
+	#pragma warning(3 : 4389)  // Signed / unsigned mismatch
 	#pragma warning(3 : 4505)  // Unreferenced local function has been removed
 	#pragma warning(3 : 4701)  // Potentially unitialized local variable used
 	#pragma warning(3 : 4702)  // Unreachable code
@@ -254,9 +254,9 @@ template class SizeChecker<UInt16, 2>;
 	#include "src/Logger.h"
 #else
 	// Logging functions
-void inline LOGERROR(const char* a_Format, ...) FORMATSTRING(1, 2);
+void inline LOGERROR(const char * a_Format, ...) FORMATSTRING(1, 2);
 
-void inline LOGERROR(const char* a_Format, ...)
+void inline LOGERROR(const char * a_Format, ...)
 {
 	va_list argList;
 	va_start(argList, a_Format);
@@ -271,14 +271,15 @@ void inline LOGERROR(const char* a_Format, ...)
 
 // Common definitions:
 
-/// Evaluates to the number of elements in an array (compile-time!)
+/** Evaluates to the number of elements in an array (compile-time!) */
 #define ARRAYCOUNT(X) (sizeof(X) / sizeof(*(X)))
 
-/// Allows arithmetic expressions like "32 KiB" (but consider using parenthesis around it, "(32 KiB)")
+/** Allows arithmetic expressions like "32 KiB" (but consider using parenthesis
+around it, "(32 KiB)") */
 #define KiB * 1024
 #define MiB * 1024 * 1024
 
-/// Faster than (int)floorf((float)x / (float)div)
+/** Faster than (int)floorf((float)x / (float)div) */
 #define FAST_FLOOR_DIV( x, div) (((x) - (((x) < 0) ? ((div) - 1) : 0)) / (div))
 
 // Own version of assert() that writes failed assertions to the log for review
@@ -330,19 +331,8 @@ void inline LOGERROR(const char* a_Format, ...)
 	#define assert_test(x) ( !!(x) || (assert(!#x), exit(1), 0))
 #endif
 
-// Allow both Older versions of MSVC and newer versions of everything use a shared_ptr:
-// Note that we cannot typedef, because C++ doesn't allow (partial) templates to be typedeffed.
-#if (defined(_MSC_VER) && (_MSC_VER < 1600))
-	// MSVC before 2010 doesn't have std::shared_ptr, but has std::tr1::shared_ptr, defined in <memory> included earlier
-	#define SharedPtr std::tr1::shared_ptr
-#elif (defined(_MSC_VER) || (__cplusplus >= 201103L))
-	// C++11 has std::shared_ptr in <memory>, included earlier
-	#define SharedPtr std::shared_ptr
-#else
-	// C++03 has std::tr1::shared_ptr in <tr1/memory>
-	#include <tr1/memory>
-	#define SharedPtr std::tr1::shared_ptr
-#endif
+// C++11 has std::shared_ptr in <memory>, included earlier
+#define SharedPtr std::shared_ptr
 
 
 
@@ -385,8 +375,3 @@ T Clamp(T a_Value, T a_Min, T a_Max)
 #include "src/BiomeDef.h"
 #include "src/BlockID.h"
 #include "src/BlockInfo.h"
-
-
-
-
-

@@ -11,57 +11,36 @@
 class cBlockMobHeadHandler :
 	public cBlockEntityHandler
 {
+	using super = cBlockEntityHandler;
+
 public:
 	cBlockMobHeadHandler(BLOCKTYPE a_BlockType):
-		cBlockEntityHandler(a_BlockType)
+		super(a_BlockType)
 	{
 	}
-	
 
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
-	{
-		// The drop spawn is in the OnDestroyedByPlayer method
-	}
-	
 
-	virtual void OnDestroyedByPlayer(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ) override
+
+
+
+	virtual cItems ConvertToPickups(NIBBLETYPE a_BlockMeta, cBlockEntity * a_BlockEntity, const cEntity * a_Digger, const cItem * a_Tool) override
 	{
-		if (a_Player->IsGameModeCreative())
+		if ((a_BlockEntity == nullptr) || (a_BlockEntity->GetBlockType() != E_BLOCK_HEAD))
 		{
-			// No drops in creative mode
-			return;
+			return {};
 		}
+		auto mobHeadEntity = static_cast<cMobHeadEntity *>(a_BlockEntity);
+		return cItem(E_ITEM_HEAD, 1, static_cast<short>(mobHeadEntity->GetType()));
+	}
 
-		class cCallback : public cBlockEntityCallback
-		{
-			virtual bool Item(cBlockEntity * a_BlockEntity)
-			{
-				if (a_BlockEntity->GetBlockType() != E_BLOCK_HEAD)
-				{
-					return false;
-				}
-				cMobHeadEntity * MobHeadEntity = static_cast<cMobHeadEntity*>(a_BlockEntity);
-				
-				cItems Pickups;
-				Pickups.Add(E_ITEM_HEAD, 1, (short) MobHeadEntity->GetType());
-				MTRand r1;
 
-				// Mid-block position first
-				double MicroX, MicroY, MicroZ;
-				MicroX = MobHeadEntity->GetPosX() + 0.5;
-				MicroY = MobHeadEntity->GetPosY() + 0.5;
-				MicroZ = MobHeadEntity->GetPosZ() + 0.5;
 
-				// Add random offset second
-				MicroX += r1.rand(1) - 0.5;
-				MicroZ += r1.rand(1) - 0.5;
 
-				MobHeadEntity->GetWorld()->SpawnItemPickups(Pickups, MicroX, MicroY, MicroZ);
-				return false;
-			}
-		} Callback;
-		
-		a_WorldInterface.DoWithBlockEntityAt(a_BlockX, a_BlockY, a_BlockZ, Callback);
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 0;
 	}
 } ;
 

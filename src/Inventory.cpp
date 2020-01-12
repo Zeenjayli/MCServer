@@ -21,13 +21,15 @@ cInventory::cInventory(cPlayer & a_Owner) :
 	m_ArmorSlots    (1, 4),  // 1 x 4 slots
 	m_InventorySlots(9, 3),  // 9 x 3 slots
 	m_HotbarSlots   (9, 1),  // 9 x 1 slots
+	m_ShieldSlots   (1, 1),  // 1 x 1 slots
 	m_Owner(a_Owner)
 {
 	// Ask each ItemGrid to report changes to us:
 	m_ArmorSlots.AddListener(*this);
 	m_InventorySlots.AddListener(*this);
 	m_HotbarSlots.AddListener(*this);
-	
+	m_ShieldSlots.AddListener(*this);
+
 	SetEquippedSlotNum(0);
 }
 
@@ -40,6 +42,7 @@ void cInventory::Clear(void)
 	m_ArmorSlots.Clear();
 	m_InventorySlots.Clear();
 	m_HotbarSlots.Clear();
+	m_ShieldSlots.Clear();
 }
 
 
@@ -98,7 +101,9 @@ int cInventory::HowManyCanFit(const cItem & a_ItemStack, int a_BeginSlotNum, int
 
 
 
-int cInventory::AddItem(const cItem & a_Item, bool a_AllowNewStacks, bool a_tryToFillEquippedFirst)
+
+
+int cInventory::AddItem(const cItem & a_Item, bool a_AllowNewStacks)
 {
 	cItem ToAdd(a_Item);
 	int res = 0;
@@ -116,13 +121,34 @@ int cInventory::AddItem(const cItem & a_Item, bool a_AllowNewStacks, bool a_tryT
 		}
 	}
 
-	res += m_HotbarSlots.AddItem(ToAdd, a_AllowNewStacks, a_tryToFillEquippedFirst ? m_EquippedSlotNum : -1);
-	ToAdd.m_ItemCount = a_Item.m_ItemCount - res;
+	for (int SlotIdx = 0; SlotIdx < m_InventorySlots.GetNumSlots(); ++SlotIdx)
+	{
+		auto & Slot = m_InventorySlots.GetSlot(SlotIdx);
+		if (Slot.IsEqual(a_Item))
+		{
+			cItemHandler Handler(Slot.m_ItemType);
+			int AmountToAdd = std::min(static_cast<char>(Handler.GetMaxStackSize() - Slot.m_ItemCount), ToAdd.m_ItemCount);
+			res += AmountToAdd;
+
+			cItem SlotAdjusted(Slot);
+			SlotAdjusted.m_ItemCount += AmountToAdd;
+			m_InventorySlots.SetSlot(SlotIdx, SlotAdjusted);
+
+			ToAdd.m_ItemCount -= AmountToAdd;
+			if (ToAdd.m_ItemCount == 0)
+			{
+				return res;
+			}
+		}
+	}
+
+	res += m_HotbarSlots.AddItem(ToAdd, a_AllowNewStacks);
+	ToAdd.m_ItemCount = static_cast<char>(a_Item.m_ItemCount - res);
 	if (ToAdd.m_ItemCount == 0)
 	{
 		return res;
 	}
-	
+
 	res += m_InventorySlots.AddItem(ToAdd, a_AllowNewStacks);
 	return res;
 }
@@ -131,12 +157,12 @@ int cInventory::AddItem(const cItem & a_Item, bool a_AllowNewStacks, bool a_tryT
 
 
 
-int cInventory::AddItems(cItems & a_ItemStackList, bool a_AllowNewStacks, bool a_tryToFillEquippedFirst)
+int cInventory::AddItems(cItems & a_ItemStackList, bool a_AllowNewStacks)
 {
 	int TotalAdded = 0;
 	for (cItems::iterator itr = a_ItemStackList.begin(); itr != a_ItemStackList.end();)
 	{
-		int NumAdded = AddItem(*itr, a_AllowNewStacks, a_tryToFillEquippedFirst);
+		int NumAdded = AddItem(*itr, a_AllowNewStacks);
 		if (itr->m_ItemCount == NumAdded)
 		{
 			itr = a_ItemStackList.erase(itr);
@@ -157,7 +183,12 @@ int cInventory::AddItems(cItems & a_ItemStackList, bool a_AllowNewStacks, bool a
 
 int cInventory::RemoveItem(const cItem & a_ItemStack)
 {
-	int RemovedItems = m_HotbarSlots.RemoveItem(a_ItemStack);
+	int RemovedItems = m_ShieldSlots.RemoveItem(a_ItemStack);
+
+	if (RemovedItems < a_ItemStack.m_ItemCount)
+	{
+		RemovedItems += m_HotbarSlots.RemoveItem(a_ItemStack);
+	}
 
 	if (RemovedItems < a_ItemStack.m_ItemCount)
 	{
@@ -179,7 +210,7 @@ bool cInventory::RemoveOneEquippedItem(void)
 	{
 		return false;
 	}
-	
+
 	m_HotbarSlots.ChangeSlotCount(m_EquippedSlotNum, -1);
 	return true;
 }
@@ -193,7 +224,8 @@ int cInventory::HowManyItems(const cItem & a_Item)
 	return
 		m_ArmorSlots.HowManyItems(a_Item) +
 		m_InventorySlots.HowManyItems(a_Item) +
-		m_HotbarSlots.HowManyItems(a_Item);
+		m_HotbarSlots.HowManyItems(a_Item) +
+		m_ShieldSlots.HowManyItems(a_Item);
 }
 
 
@@ -253,6 +285,15 @@ void cInventory::SetInventorySlot(int a_InventorySlotNum, const cItem & a_Item)
 void cInventory::SetHotbarSlot(int a_HotBarSlotNum, const cItem & a_Item)
 {
 	m_HotbarSlots.SetSlot(a_HotBarSlotNum, a_Item);
+}
+
+
+
+
+
+void cInventory::SetShieldSlot(const cItem & a_Item)
+{
+	m_ShieldSlots.SetSlot(0, a_Item);
 }
 
 
@@ -333,6 +374,15 @@ const cItem & cInventory::GetHotbarSlot(int a_SlotNum) const
 
 
 
+const cItem & cInventory::GetShieldSlot() const
+{
+	return m_ShieldSlots.GetSlot(0);
+}
+
+
+
+
+
 const cItem & cInventory::GetEquippedItem(void) const
 {
 	return GetHotbarSlot(m_EquippedSlotNum);
@@ -395,7 +445,7 @@ bool cInventory::DamageItem(int a_SlotNum, short a_Amount)
 	{
 		return false;
 	}
-	
+
 	int GridSlotNum = 0;
 	cItemGrid * Grid = GetGridForSlotNum(a_SlotNum, GridSlotNum);
 	if (Grid == nullptr)
@@ -409,7 +459,7 @@ bool cInventory::DamageItem(int a_SlotNum, short a_Amount)
 		SendSlot(a_SlotNum);
 		return false;
 	}
-	
+
 	// The item has broken, remove it:
 	Grid->EmptySlot(GridSlotNum);
 	return true;
@@ -438,7 +488,7 @@ void cInventory::SendSlot(int a_SlotNum)
 		// Sanitize items that are not completely empty (ie. count == 0, but type != empty)
 		Item.Empty();
 	}
-	m_Owner.GetClientHandle()->SendInventorySlot(0, a_SlotNum + 5, Item);  // Slots in the client are numbered "+ 5" because of crafting grid and result
+	m_Owner.GetClientHandle()->SendInventorySlot(0, static_cast<short>(a_SlotNum + 5), Item);  // Slots in the client are numbered "+ 5" because of crafting grid and result
 }
 
 
@@ -559,21 +609,9 @@ bool cInventory::AddToBar(cItem & a_Item, const int a_Offset, const int a_Size, 
 void cInventory::UpdateItems(void)
 {
 	const cItem & Slot = GetEquippedItem();
-
-	if (Slot.IsEmpty())
+	if (!Slot.IsEmpty())
 	{
-		return;
-	}
-
-	switch (Slot.m_ItemType)
-	{
-		case E_ITEM_MAP:
-		{
-			ItemHandler(Slot.m_ItemType)->OnUpdate(m_Owner.GetWorld(), &m_Owner, Slot);
-			break;
-		}
-
-		default: break;
+		ItemHandler(Slot.m_ItemType)->OnUpdate(m_Owner.GetWorld(), &m_Owner, Slot);
 	}
 }
 
@@ -591,7 +629,7 @@ void cInventory::SaveToJson(Json::Value & a_Value)
 	{
 		a_Value.append(EmptyItemJson);
 	}
-	
+
 	// The 4 armor slots follow:
 	for (int i = 0; i < invArmorCount; i++)
 	{
@@ -608,13 +646,18 @@ void cInventory::SaveToJson(Json::Value & a_Value)
 		a_Value.append(JSON_Item);
 	}
 
-	// The hotbar is the last:
+	// The hotbar:
 	for (int i = 0; i < invHotbarCount; i++)
 	{
 		Json::Value JSON_Item;
 		m_HotbarSlots.GetSlot(i).GetJson(JSON_Item);
 		a_Value.append(JSON_Item);
 	}
+
+	// Shield slot is the last
+	Json::Value JSON_Item;
+	m_ShieldSlots.GetSlot(0).GetJson(JSON_Item);
+	a_Value.append(JSON_Item);
 }
 
 
@@ -624,24 +667,24 @@ void cInventory::SaveToJson(Json::Value & a_Value)
 bool cInventory::LoadFromJson(Json::Value & a_Value)
 {
 	int SlotIdx = 0;
-	
+
 	for (Json::Value::iterator itr = a_Value.begin(); itr != a_Value.end(); ++itr, SlotIdx++)
 	{
 		cItem Item;
 		Item.FromJson(*itr);
-		
+
 		// The JSON originally included the 4 crafting slots and the result slot, so we need to skip the first 5 items:
 		if (SlotIdx < 5)
 		{
 			continue;
 		}
-		
+
 		// If we loaded all the slots, stop now, even if the JSON has more:
 		if (SlotIdx - 5 >= invNumSlots)
 		{
 			break;
 		}
-		
+
 		int GridSlotNum = 0;
 		cItemGrid * Grid = GetGridForSlotNum(SlotIdx - 5, GridSlotNum);
 		ASSERT(Grid != nullptr);
@@ -657,7 +700,7 @@ bool cInventory::LoadFromJson(Json::Value & a_Value)
 const cItemGrid * cInventory::GetGridForSlotNum(int a_SlotNum, int & a_GridSlotNum) const
 {
 	ASSERT(a_SlotNum >= 0);
-	
+
 	if (a_SlotNum < invArmorCount)
 	{
 		a_GridSlotNum = a_SlotNum;
@@ -669,8 +712,14 @@ const cItemGrid * cInventory::GetGridForSlotNum(int a_SlotNum, int & a_GridSlotN
 		a_GridSlotNum = a_SlotNum;
 		return &m_InventorySlots;
 	}
-	a_GridSlotNum = a_SlotNum - invInventoryCount;
-	return &m_HotbarSlots;
+	a_SlotNum -= invInventoryCount;
+	if (a_SlotNum < invHotbarCount)
+	{
+		a_GridSlotNum = a_SlotNum;
+		return &m_HotbarSlots;
+	}
+	a_GridSlotNum = a_SlotNum - invHotbarCount;
+	return &m_ShieldSlots;
 }
 
 
@@ -680,7 +729,7 @@ const cItemGrid * cInventory::GetGridForSlotNum(int a_SlotNum, int & a_GridSlotN
 cItemGrid * cInventory::GetGridForSlotNum(int a_SlotNum, int & a_GridSlotNum)
 {
 	ASSERT(a_SlotNum >= 0);
-	
+
 	if (a_SlotNum < invArmorCount)
 	{
 		a_GridSlotNum = a_SlotNum;
@@ -692,8 +741,14 @@ cItemGrid * cInventory::GetGridForSlotNum(int a_SlotNum, int & a_GridSlotNum)
 		a_GridSlotNum = a_SlotNum;
 		return &m_InventorySlots;
 	}
-	a_GridSlotNum = a_SlotNum - invInventoryCount;
-	return &m_HotbarSlots;
+	a_SlotNum -= invInventoryCount;
+	if (a_SlotNum < invHotbarCount)
+	{
+		a_GridSlotNum = a_SlotNum;
+		return &m_HotbarSlots;
+	}
+	a_GridSlotNum = a_SlotNum - invHotbarCount;
+	return &m_ShieldSlots;
 }
 
 
@@ -703,19 +758,19 @@ cItemGrid * cInventory::GetGridForSlotNum(int a_SlotNum, int & a_GridSlotNum)
 void cInventory::OnSlotChanged(cItemGrid * a_ItemGrid, int a_SlotNum)
 {
 	// Send the neccessary updates to whoever needs them
-	
-	if (m_Owner.IsDestroyed())
+
+	if (!m_Owner.IsTicking())
 	{
 		// Owner is not (yet) valid, skip for now
 		return;
 	}
-	
+
 	// Armor update needs broadcast to other players:
 	cWorld * World = m_Owner.GetWorld();
 	if ((a_ItemGrid == &m_ArmorSlots) && (World != nullptr))
 	{
 		World->BroadcastEntityEquipment(
-			m_Owner, ArmorSlotNumToEntityEquipmentID(a_SlotNum),
+			m_Owner, static_cast<short>(ArmorSlotNumToEntityEquipmentID(static_cast<short>(a_SlotNum))),
 			m_ArmorSlots.GetSlot(a_SlotNum), m_Owner.GetClientHandle()
 		);
 	}
@@ -725,7 +780,7 @@ void cInventory::OnSlotChanged(cItemGrid * a_ItemGrid, int a_SlotNum)
 	{
 		m_Owner.GetWorld()->BroadcastEntityEquipment(m_Owner, 0, GetEquippedItem(), m_Owner.GetClientHandle());
 	}
-	
+
 	// Convert the grid-local a_SlotNum to our global SlotNum:
 	int Base = 0;
 	if (a_ItemGrid == &m_ArmorSlots)
@@ -740,12 +795,16 @@ void cInventory::OnSlotChanged(cItemGrid * a_ItemGrid, int a_SlotNum)
 	{
 		Base = invHotbarOffset;
 	}
+	else if (a_ItemGrid == &m_ShieldSlots)
+	{
+		Base = invShieldOffset;
+	}
 	else
 	{
 		ASSERT(!"Unknown ItemGrid calling OnSlotChanged()");
 		return;
 	}
-	
+
 	SendSlot(Base + a_SlotNum);
 }
 

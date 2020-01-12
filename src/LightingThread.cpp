@@ -6,45 +6,53 @@
 #include "Globals.h"
 #include "LightingThread.h"
 #include "ChunkMap.h"
-#include "ChunkStay.h"
 #include "World.h"
 
 
 
 
 
-
-/// Chunk data callback that takes the chunk data and puts them into cLightingThread's m_BlockTypes[] / m_HeightMap[]:
+/** Chunk data callback that takes the chunk data and puts them into cLightingThread's m_BlockTypes[] / m_HeightMap[]: */
 class cReader :
 	public cChunkDataCallback
 {
 	virtual void ChunkData(const cChunkData & a_ChunkBuffer) override
 	{
 		BLOCKTYPE * OutputRows = m_BlockTypes;
-		int InputIdx = 0;
 		int OutputIdx = m_ReadingChunkX + m_ReadingChunkZ * cChunkDef::Width * 3;
-		int MaxHeight = std::min(+cChunkDef::Height, m_MaxHeight + 16);  // Need 16 blocks above the highest
-		for (int y = 0; y < MaxHeight; y++)
+		for (size_t i = 0; i != cChunkData::NumSections; ++i)
 		{
-			for (int z = 0; z < cChunkDef::Width; z++)
+			auto * Section = a_ChunkBuffer.GetSection(i);
+			if (Section == nullptr)
 			{
-				a_ChunkBuffer.CopyBlockTypes(OutputRows + OutputIdx * 16, InputIdx * 16, 16);
-				InputIdx++;
-				OutputIdx += 3;
-			}  // for z
-			// Skip into the next y-level in the 3x3 chunk blob; each level has cChunkDef::Width * 9 rows
-			// We've already walked cChunkDef::Width * 3 in the "for z" cycle, that makes cChunkDef::Width * 6 rows left to skip
-			OutputIdx += cChunkDef::Width * 6;
-		}  // for y
+				// Skip to the next section
+				OutputIdx += 9 * cChunkData::SectionHeight * cChunkDef::Width;
+				continue;
+			}
+
+			for (size_t OffsetY = 0; OffsetY != cChunkData::SectionHeight; ++OffsetY)
+			{
+				for (size_t Z = 0; Z != cChunkDef::Width; ++Z)
+				{
+					auto InPtr = Section->m_BlockTypes + Z * cChunkDef::Width + OffsetY * cChunkDef::Width * cChunkDef::Width;
+					std::copy_n(InPtr, cChunkDef::Width, OutputRows + OutputIdx * cChunkDef::Width);
+
+					OutputIdx += 3;
+				}
+				// Skip into the next y-level in the 3x3 chunk blob; each level has cChunkDef::Width * 9 rows
+				// We've already walked cChunkDef::Width * 3 in the "for z" cycle, that makes cChunkDef::Width * 6 rows left to skip
+				OutputIdx += cChunkDef::Width * 6;
+			}
+		}
 	}  // BlockTypes()
-	
-	
+
+
 	virtual void HeightMap(const cChunkDef::HeightMap * a_Heightmap) override
 	{
 		// Copy the entire heightmap, distribute it into the 3x3 chunk blob:
 		typedef struct {HEIGHTTYPE m_Row[16]; } ROW;
-		ROW * InputRows  = (ROW *)a_Heightmap;
-		ROW * OutputRows = (ROW *)m_HeightMap;
+		const ROW * InputRows  = reinterpret_cast<const ROW *>(a_Heightmap);
+		ROW * OutputRows = reinterpret_cast<ROW *>(m_HeightMap);
 		int InputIdx = 0;
 		int OutputIdx = m_ReadingChunkX + m_ReadingChunkZ * cChunkDef::Width * 3;
 		for (int z = 0; z < cChunkDef::Width; z++)
@@ -64,14 +72,14 @@ class cReader :
 		}
 		m_MaxHeight = MaxHeight;
 	}
-	
+
 public:
 	int m_ReadingChunkX;  // 0, 1 or 2; x-offset of the chunk we're reading from the BlockTypes start
 	int m_ReadingChunkZ;  // 0, 1 or 2; z-offset of the chunk we're reading from the BlockTypes start
 	HEIGHTTYPE m_MaxHeight;  // Maximum value in this chunk's heightmap
 	BLOCKTYPE * m_BlockTypes;  // 3x3 chunks of block types, organized as a single XZY blob of data (instead of 3x3 XZY blobs)
 	HEIGHTTYPE * m_HeightMap;  // 3x3 chunks of height map,  organized as a single XZY blob of data (instead of 3x3 XZY blobs)
-	
+
 	cReader(BLOCKTYPE * a_BlockTypes, HEIGHTTYPE * a_HeightMap) :
 		m_ReadingChunkX(0),
 		m_ReadingChunkZ(0),
@@ -79,6 +87,7 @@ public:
 		m_BlockTypes(a_BlockTypes),
 		m_HeightMap(a_HeightMap)
 	{
+		std::fill_n(m_BlockTypes, cChunkDef::NumBlocks * 9, E_BLOCK_AIR);
 	}
 } ;
 
@@ -89,9 +98,9 @@ public:
 ////////////////////////////////////////////////////////////////////////////////
 // cLightingThread:
 
-cLightingThread::cLightingThread(void) :
+cLightingThread::cLightingThread(cWorld & a_World):
 	super("cLightingThread"),
-	m_World(nullptr),
+	m_World(a_World),
 	m_MaxHeight(0),
 	m_NumSeeds(0)
 {
@@ -104,18 +113,6 @@ cLightingThread::cLightingThread(void) :
 cLightingThread::~cLightingThread()
 {
 	Stop();
-}
-
-
-
-
-
-bool cLightingThread::Start(cWorld * a_World)
-{
-	ASSERT(m_World == nullptr);  // Not started yet
-	m_World = a_World;
-	
-	return super::Start();
 }
 
 
@@ -141,26 +138,24 @@ void cLightingThread::Stop(void)
 	}
 	m_ShouldTerminate = true;
 	m_evtItemAdded.Set();
-	
-	Wait();
+
+	super::Stop();
 }
 
 
 
 
 
-void cLightingThread::QueueChunk(int a_ChunkX, int a_ChunkZ, cChunkCoordCallback * a_CallbackAfter)
+void cLightingThread::QueueChunk(int a_ChunkX, int a_ChunkZ, std::unique_ptr<cChunkCoordCallback> a_CallbackAfter)
 {
-	ASSERT(m_World != nullptr);  // Did you call Start() properly?
-	
-	cChunkStay * ChunkStay = new cLightingChunkStay(*this, a_ChunkX, a_ChunkZ, a_CallbackAfter);
+	cChunkStay * ChunkStay = new cLightingChunkStay(*this, a_ChunkX, a_ChunkZ, std::move(a_CallbackAfter));
 	{
 		// The ChunkStay will enqueue itself using the QueueChunkStay() once it is fully loaded
 		// In the meantime, put it into the PendingQueue so that it can be removed when stopping the thread
 		cCSLock Lock(m_CS);
 		m_PendingQueue.push_back(ChunkStay);
 	}
-	ChunkStay->Enable(*m_World->GetChunkMap());
+	ChunkStay->Enable(*m_World.GetChunkMap());
 }
 
 
@@ -203,12 +198,12 @@ void cLightingThread::Execute(void)
 				m_evtItemAdded.Wait();
 			}
 		}
-		
+
 		if (m_ShouldTerminate)
 		{
 			return;
 		}
-		
+
 		// Process one items from the queue:
 		cLightingChunkStay * Item;
 		{
@@ -217,14 +212,14 @@ void cLightingThread::Execute(void)
 			{
 				continue;
 			}
-			Item = (cLightingChunkStay *)m_Queue.front();
+			Item = static_cast<cLightingChunkStay *>(m_Queue.front());
 			m_Queue.pop_front();
 			if (m_Queue.empty())
 			{
 				m_evtQueueEmpty.Set();
 			}
 		}  // CSLock(m_CS)
-		
+
 		LightChunk(*Item);
 		Item->Disable();
 		delete Item;
@@ -235,28 +230,27 @@ void cLightingThread::Execute(void)
 
 
 
-
 void cLightingThread::LightChunk(cLightingChunkStay & a_Item)
 {
-	// If the chunk is already lit, skip it:
-	if (m_World->IsChunkLighted(a_Item.m_ChunkX, a_Item.m_ChunkZ))
+	// If the chunk is already lit, skip it (report as success):
+	if (m_World.IsChunkLighted(a_Item.m_ChunkX, a_Item.m_ChunkZ))
 	{
 		if (a_Item.m_CallbackAfter != nullptr)
 		{
-			a_Item.m_CallbackAfter->Call(a_Item.m_ChunkX, a_Item.m_ChunkZ);
+			a_Item.m_CallbackAfter->Call({a_Item.m_ChunkX, a_Item.m_ChunkZ}, true);
 		}
 		return;
 	}
 
 	cChunkDef::BlockNibbles BlockLight, SkyLight;
-	
+
 	ReadChunks(a_Item.m_ChunkX, a_Item.m_ChunkZ);
-	
+
 	PrepareBlockLight();
 	CalcLight(m_BlockLight);
-	
+
 	PrepareSkyLight();
-	
+
 	/*
 	// DEBUG: Save chunk data with highlighted seeds for visual inspection:
 	cFile f4;
@@ -283,9 +277,9 @@ void cLightingThread::LightChunk(cLightingChunkStay & a_Item)
 		f4.Close();
 	}
 	//*/
-	
+
 	CalcLight(m_SkyLight);
-	
+
 	/*
 	// DEBUG: Save XY slices of the chunk data and lighting for visual inspection:
 	cFile f1, f2, f3;
@@ -316,15 +310,15 @@ void cLightingThread::LightChunk(cLightingChunkStay & a_Item)
 		f3.Close();
 	}
 	//*/
-	
+
 	CompressLight(m_BlockLight, BlockLight);
 	CompressLight(m_SkyLight, SkyLight);
-	
-	m_World->ChunkLighted(a_Item.m_ChunkX, a_Item.m_ChunkZ, BlockLight, SkyLight);
+
+	m_World.ChunkLighted(a_Item.m_ChunkX, a_Item.m_ChunkZ, BlockLight, SkyLight);
 
 	if (a_Item.m_CallbackAfter != nullptr)
 	{
-		a_Item.m_CallbackAfter->Call(a_Item.m_ChunkX, a_Item.m_ChunkZ);
+		a_Item.m_CallbackAfter->Call({a_Item.m_ChunkX, a_Item.m_ChunkZ}, true);
 	}
 }
 
@@ -335,17 +329,17 @@ void cLightingThread::LightChunk(cLightingChunkStay & a_Item)
 void cLightingThread::ReadChunks(int a_ChunkX, int a_ChunkZ)
 {
 	cReader Reader(m_BlockTypes, m_HeightMap);
-	
+
 	for (int z = 0; z < 3; z++)
 	{
 		Reader.m_ReadingChunkZ = z;
 		for (int x = 0; x < 3; x++)
 		{
 			Reader.m_ReadingChunkX = x;
-			VERIFY(m_World->GetChunkData(a_ChunkX + x - 1, a_ChunkZ + z - 1, Reader));
+			VERIFY(m_World.GetChunkData({a_ChunkX + x - 1, a_ChunkZ + z - 1}, Reader));
 		}  // for z
 	}  // for x
-	
+
 	memset(m_BlockLight, 0, sizeof(m_BlockLight));
 	memset(m_SkyLight,   0, sizeof(m_SkyLight));
 	m_MaxHeight = Reader.m_MaxHeight;
@@ -360,7 +354,13 @@ void cLightingThread::PrepareSkyLight(void)
 	// Clear seeds:
 	memset(m_IsSeed1, 0, sizeof(m_IsSeed1));
 	m_NumSeeds = 0;
-	
+
+	// Fill the top of the chunk with all-light:
+	if (m_MaxHeight < cChunkDef::Height - 1)
+	{
+		std::fill(m_SkyLight + (m_MaxHeight + 1) * BlocksPerYLayer, m_SkyLight + ARRAYCOUNT(m_SkyLight), 15);
+	}
+
 	// Walk every column that has all XZ neighbors
 	for (int z = 1; z < cChunkDef::Width * 3 - 1; z++)
 	{
@@ -368,32 +368,44 @@ void cLightingThread::PrepareSkyLight(void)
 		for (int x = 1; x < cChunkDef::Width * 3 - 1; x++)
 		{
 			int idx = BaseZ + x;
-			int Current   = m_HeightMap[idx] + 1;
+			// Find the lowest block in this column that receives full sunlight (go through transparent blocks):
+			int Current = m_HeightMap[idx];
+			ASSERT(Current < cChunkDef::Height);
+			while (
+				(Current >= 0) &&
+				cBlockInfo::IsTransparent(m_BlockTypes[idx + Current * BlocksPerYLayer]) &&
+				!cBlockInfo::IsSkylightDispersant(m_BlockTypes[idx + Current * BlocksPerYLayer])
+			)
+			{
+				Current -= 1;  // Sunlight goes down unchanged through this block
+			}
+			Current += 1;  // Point to the last sunlit block, rather than the first non-transparent one
+			// The other neighbors don't need transparent-block-checking. At worst we'll have a few dud seeds above the ground.
 			int Neighbor1 = m_HeightMap[idx + 1] + 1;  // X + 1
 			int Neighbor2 = m_HeightMap[idx - 1] + 1;  // X - 1
 			int Neighbor3 = m_HeightMap[idx + cChunkDef::Width * 3] + 1;  // Z + 1
 			int Neighbor4 = m_HeightMap[idx - cChunkDef::Width * 3] + 1;  // Z - 1
 			int MaxNeighbor = std::max(std::max(Neighbor1, Neighbor2), std::max(Neighbor3, Neighbor4));  // Maximum of the four neighbors
-			
-			// Fill the column from the top down to Current with all-light:
-			for (int y = cChunkDef::Height - 1, Index = idx + y * BlocksPerYLayer; y >= Current; y--, Index -= BlocksPerYLayer)
+
+			// Fill the column from m_MaxHeight to Current with all-light:
+			for (int y = m_MaxHeight, Index = idx + y * BlocksPerYLayer; y >= Current; y--, Index -= BlocksPerYLayer)
 			{
 				m_SkyLight[Index] = 15;
 			}
-			
+
 			// Add Current as a seed:
 			if (Current < cChunkDef::Height)
 			{
 				int CurrentIdx = idx + Current * BlocksPerYLayer;
 				m_IsSeed1[CurrentIdx] = true;
-				m_SeedIdx1[m_NumSeeds++] = CurrentIdx;
+				m_SeedIdx1[m_NumSeeds++] = static_cast<UInt32>(CurrentIdx);
 			}
-			
+
 			// Add seed from Current up to the highest neighbor:
 			for (int y = Current + 1, Index = idx + y * BlocksPerYLayer; y < MaxNeighbor; y++, Index += BlocksPerYLayer)
 			{
 				m_IsSeed1[Index] = true;
-				m_SeedIdx1[m_NumSeeds++] = Index;
+				m_SeedIdx1[m_NumSeeds++] = static_cast<UInt32>(Index);
 			}
 		}
 	}
@@ -403,79 +415,28 @@ void cLightingThread::PrepareSkyLight(void)
 
 
 
-void cLightingThread::PrepareBlockLight(void)
+void cLightingThread::PrepareBlockLight()
 {
 	// Clear seeds:
 	memset(m_IsSeed1, 0, sizeof(m_IsSeed1));
 	memset(m_IsSeed2, 0, sizeof(m_IsSeed2));
 	m_NumSeeds = 0;
 
-	// Walk every column that has all XZ neighbors, make a seed for each light-emitting block:
-	for (int z = 1; z < cChunkDef::Width * 3 - 1; z++)
-	{
-		int BaseZ = z * cChunkDef::Width * 3;
-		for (int x = 1; x < cChunkDef::Width * 3 - 1; x++)
-		{
-			int idx = BaseZ + x;
-			for (int y = m_HeightMap[idx], Index = idx + y * BlocksPerYLayer; y >= 0; y--, Index -= BlocksPerYLayer)
-			{
-				if (cBlockInfo::GetLightValue(m_BlockTypes[Index]) == 0)
-				{
-					continue;
-				}
-				
-				// Add current block as a seed:
-				m_IsSeed1[Index] = true;
-				m_SeedIdx1[m_NumSeeds++] = Index;
-
-				// Light it up:
-				m_BlockLight[Index] = cBlockInfo::GetLightValue(m_BlockTypes[Index]);
-			}
-		}
-	}
-}
-
-
-
-
-
-void cLightingThread::PrepareBlockLight2(void)
-{
-	// Clear seeds:
-	memset(m_IsSeed1, 0, sizeof(m_IsSeed1));
-	memset(m_IsSeed2, 0, sizeof(m_IsSeed2));
-	m_NumSeeds = 0;
-	
 	// Add each emissive block into the seeds:
-	for (int y = 0; y < m_MaxHeight; y++)
+	for (int Idx = 0; Idx < (m_MaxHeight * BlocksPerYLayer); ++Idx)
 	{
-		int BaseY = y * BlocksPerYLayer;  // Partial offset into m_BlockTypes for the Y coord
-		for (int z = 1; z < cChunkDef::Width * 3 - 1; z++)
+		if (cBlockInfo::GetLightValue(m_BlockTypes[Idx]) == 0)
 		{
-			int HBaseZ = z * cChunkDef::Width * 3;  // Partial offset into m_Heightmap for the Z coord
-			int BaseZ = BaseY + HBaseZ;  // Partial offset into m_BlockTypes for the Y and Z coords
-			for (int x = 1; x < cChunkDef::Width * 3 - 1; x++)
-			{
-				int idx = BaseZ + x;
-				if (y > m_HeightMap[HBaseZ + x])
-				{
-					// We're above the heightmap, ignore the block
-					continue;
-				}
-				if (cBlockInfo::GetLightValue(m_BlockTypes[idx]) == 0)
-				{
-					// Not a light-emissive block
-					continue;
-				}
-				
-				// Add current block as a seed:
-				m_IsSeed1[idx] = true;
-				m_SeedIdx1[m_NumSeeds++] = idx;
-
-				// Light it up:
-				m_BlockLight[idx] = cBlockInfo::GetLightValue(m_BlockTypes[idx]);
-			}
+			// Not a light-emissive block
+			continue;
 		}
+
+		// Add current block as a seed:
+		m_IsSeed1[Idx] = true;
+		m_SeedIdx1[m_NumSeeds++] = static_cast<UInt32>(Idx);
+
+		// Light it up:
+		m_BlockLight[Idx] = cBlockInfo::GetLightValue(m_BlockTypes[Idx]);
 	}
 }
 
@@ -485,7 +446,7 @@ void cLightingThread::PrepareBlockLight2(void)
 
 void cLightingThread::CalcLight(NIBBLETYPE * a_Light)
 {
-	int NumSeeds2 = 0;
+	size_t NumSeeds2 = 0;
 	while (m_NumSeeds > 0)
 	{
 		// Buffer 1 -> buffer 2
@@ -496,7 +457,7 @@ void cLightingThread::CalcLight(NIBBLETYPE * a_Light)
 		{
 			return;
 		}
-		
+
 		// Buffer 2 -> buffer 1
 		memset(m_IsSeed1, 0, sizeof(m_IsSeed1));
 		m_NumSeeds = 0;
@@ -510,19 +471,18 @@ void cLightingThread::CalcLight(NIBBLETYPE * a_Light)
 
 void cLightingThread::CalcLightStep(
 	NIBBLETYPE * a_Light,
-	int a_NumSeedsIn,    unsigned char * a_IsSeedIn,  unsigned int * a_SeedIdxIn,
-	int & a_NumSeedsOut, unsigned char * a_IsSeedOut, unsigned int * a_SeedIdxOut
+	size_t a_NumSeedsIn,    unsigned char * a_IsSeedIn,  unsigned int * a_SeedIdxIn,
+	size_t & a_NumSeedsOut, unsigned char * a_IsSeedOut, unsigned int * a_SeedIdxOut
 )
 {
 	UNUSED(a_IsSeedIn);
-	int NumSeedsOut = 0;
-	for (int i = 0; i < a_NumSeedsIn; i++)
+	size_t NumSeedsOut = 0;
+	for (size_t i = 0; i < a_NumSeedsIn; i++)
 	{
-		int SeedIdx = a_SeedIdxIn[i];
+		UInt32 SeedIdx = static_cast<UInt32>(a_SeedIdxIn[i]);
 		int SeedX = SeedIdx % (cChunkDef::Width * 3);
 		int SeedZ = (SeedIdx / (cChunkDef::Width * 3)) % (cChunkDef::Width * 3);
-		int SeedY = SeedIdx / BlocksPerYLayer;
-		
+
 		// Propagate seed:
 		if (SeedX < cChunkDef::Width * 3 - 1)
 		{
@@ -540,13 +500,13 @@ void cLightingThread::CalcLightStep(
 		{
 			PropagateLight(a_Light, SeedIdx, SeedIdx - cChunkDef::Width * 3, NumSeedsOut, a_IsSeedOut, a_SeedIdxOut);
 		}
-		if (SeedY < cChunkDef::Height - 1)
+		if (SeedIdx < (cChunkDef::Height - 1) * BlocksPerYLayer)
 		{
-			PropagateLight(a_Light, SeedIdx, SeedIdx + cChunkDef::Width * cChunkDef::Width * 3 * 3, NumSeedsOut, a_IsSeedOut, a_SeedIdxOut);
+			PropagateLight(a_Light, SeedIdx, SeedIdx + BlocksPerYLayer, NumSeedsOut, a_IsSeedOut, a_SeedIdxOut);
 		}
-		if (SeedY > 0)
+		if (SeedIdx >= BlocksPerYLayer)
 		{
-			PropagateLight(a_Light, SeedIdx, SeedIdx - cChunkDef::Width * cChunkDef::Width * 3 * 3, NumSeedsOut, a_IsSeedOut, a_SeedIdxOut);
+			PropagateLight(a_Light, SeedIdx, SeedIdx - BlocksPerYLayer, NumSeedsOut, a_IsSeedOut, a_SeedIdxOut);
 		}
 	}  // for i - a_SeedIdxIn[]
 	a_NumSeedsOut = NumSeedsOut;
@@ -566,7 +526,7 @@ void cLightingThread::CompressLight(NIBBLETYPE * a_LightArray, NIBBLETYPE * a_Ch
 		{
 			for (int x = 0; x < cChunkDef::Width; x += 2)
 			{
-				a_ChunkLight[OutIdx++] = (a_LightArray[InIdx + 1] << 4) | a_LightArray[InIdx];
+				a_ChunkLight[OutIdx++] = static_cast<NIBBLETYPE>(a_LightArray[InIdx + 1] << 4) | a_LightArray[InIdx];
 				InIdx += 2;
 			}
 			InIdx += cChunkDef::Width * 2;
@@ -599,11 +559,11 @@ void cLightingThread::QueueChunkStay(cLightingChunkStay & a_ChunkStay)
 ////////////////////////////////////////////////////////////////////////////////
 // cLightingThread::cLightingChunkStay:
 
-cLightingThread::cLightingChunkStay::cLightingChunkStay(cLightingThread & a_LightingThread, int a_ChunkX, int a_ChunkZ, cChunkCoordCallback * a_CallbackAfter) :
+cLightingThread::cLightingChunkStay::cLightingChunkStay(cLightingThread & a_LightingThread, int a_ChunkX, int a_ChunkZ, std::unique_ptr<cChunkCoordCallback> a_CallbackAfter) :
 	m_LightingThread(a_LightingThread),
 	m_ChunkX(a_ChunkX),
 	m_ChunkZ(a_ChunkZ),
-	m_CallbackAfter(a_CallbackAfter)
+	m_CallbackAfter(std::move(a_CallbackAfter))
 {
 	Add(a_ChunkX + 1, a_ChunkZ + 1);
 	Add(a_ChunkX + 1, a_ChunkZ);
@@ -623,7 +583,7 @@ cLightingThread::cLightingChunkStay::cLightingChunkStay(cLightingThread & a_Ligh
 bool cLightingThread::cLightingChunkStay::OnAllChunksAvailable(void)
 {
 	m_LightingThread.QueueChunkStay(*this);
-	
+
 	// Keep the ChunkStay alive:
 	return false;
 }

@@ -5,18 +5,16 @@
 
 #include "Globals.h"
 #include "ChunkDesc.h"
-#include "../BlockArea.h"
-#include "../Cuboid.h"
 #include "../Noise/Noise.h"
 #include "../BlockEntities/BlockEntity.h"
+#include "../Entities/Entity.h"
 
 
 
 
 
-cChunkDesc::cChunkDesc(int a_ChunkX, int a_ChunkZ) :
-	m_ChunkX(a_ChunkX),
-	m_ChunkZ(a_ChunkZ),
+cChunkDesc::cChunkDesc(cChunkCoords a_Coords) :
+	m_Coords(a_Coords),
 	m_bUseDefaultBiomes(true),
 	m_bUseDefaultHeight(true),
 	m_bUseDefaultComposition(true),
@@ -44,10 +42,9 @@ cChunkDesc::~cChunkDesc()
 
 
 
-void cChunkDesc::SetChunkCoords(int a_ChunkX, int a_ChunkZ)
+void cChunkDesc::SetChunkCoords(cChunkCoords a_Coords)
 {
-	m_ChunkX = a_ChunkX;
-	m_ChunkZ = a_ChunkZ;
+	m_Coords = a_Coords;
 }
 
 
@@ -72,7 +69,7 @@ void cChunkDesc::SetBlockTypeMeta(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE 
 
 
 
-void cChunkDesc::GetBlockTypeMeta(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta)
+void cChunkDesc::GetBlockTypeMeta(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta) const
 {
 	m_BlockArea.GetRelBlockTypeMeta(a_RelX, a_RelY, a_RelZ, a_BlockType, a_BlockMeta);
 }
@@ -90,7 +87,7 @@ void cChunkDesc::SetBlockType(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_Bl
 
 
 
-BLOCKTYPE cChunkDesc::GetBlockType(int a_RelX, int a_RelY, int a_RelZ)
+BLOCKTYPE cChunkDesc::GetBlockType(int a_RelX, int a_RelY, int a_RelZ) const
 {
 	return cChunkDef::GetBlock(m_BlockArea.GetBlockTypes(), a_RelX, a_RelY, a_RelZ);
 }
@@ -99,7 +96,7 @@ BLOCKTYPE cChunkDesc::GetBlockType(int a_RelX, int a_RelY, int a_RelZ)
 
 
 
-NIBBLETYPE cChunkDesc::GetBlockMeta(int a_RelX, int a_RelY, int a_RelZ)
+NIBBLETYPE cChunkDesc::GetBlockMeta(int a_RelX, int a_RelY, int a_RelZ) const
 {
 	return m_BlockArea.GetRelBlockMeta(a_RelX, a_RelY, a_RelZ);
 }
@@ -125,7 +122,8 @@ void cChunkDesc::SetBiome(int a_RelX, int a_RelZ, EMCSBiome a_BiomeID)
 
 
 
-EMCSBiome cChunkDesc::GetBiome(int a_RelX, int a_RelZ)
+
+EMCSBiome cChunkDesc::GetBiome(int a_RelX, int a_RelZ) const
 {
 	return cChunkDef::GetBiome(m_BiomeMap, a_RelX, a_RelZ);
 }
@@ -134,7 +132,7 @@ EMCSBiome cChunkDesc::GetBiome(int a_RelX, int a_RelZ)
 
 
 
-void cChunkDesc::SetHeight(int a_RelX, int a_RelZ, int a_Height)
+void cChunkDesc::SetHeight(int a_RelX, int a_RelZ, HEIGHTTYPE a_Height)
 {
 	cChunkDef::SetHeight(m_HeightMap, a_RelX, a_RelZ, a_Height);
 }
@@ -143,7 +141,7 @@ void cChunkDesc::SetHeight(int a_RelX, int a_RelZ, int a_Height)
 
 
 
-int cChunkDesc::GetHeight(int a_RelX, int a_RelZ)
+HEIGHTTYPE cChunkDesc::GetHeight(int a_RelX, int a_RelZ) const
 {
 	return cChunkDef::GetHeight(m_HeightMap, a_RelX, a_RelZ);
 }
@@ -158,7 +156,7 @@ void cChunkDesc::SetHeightFromShape(const Shape & a_Shape)
 	{
 		for (int x = 0; x < cChunkDef::Width; x++)
 		{
-			for (int y = cChunkDef::Height - 1; y > 0; y--)
+			for (HEIGHTTYPE y = cChunkDef::Height - 1; y > 0; y--)
 			{
 				if (a_Shape[y + x * 256 + z * 16 * 256] != 0)
 				{
@@ -185,7 +183,7 @@ void cChunkDesc::GetShapeFromHeight(Shape & a_Shape) const
 			{
 				a_Shape[y + x * 256 + z * 16 * 256] = 1;
 			}
-			
+
 			for (int y = height + 1; y < cChunkDef::Height; y++)
 			{
 				a_Shape[y + x * 256 + z * 16 * 256] = 0;
@@ -265,6 +263,7 @@ bool cChunkDesc::IsUsingDefaultFinish(void) const
 {
 	return m_bUseDefaultFinish;
 }
+
 
 
 
@@ -368,9 +367,9 @@ void cChunkDesc::ReadBlockArea(cBlockArea & a_Dest, int a_MinRelX, int a_MaxRelX
 	int SizeY = a_MaxRelY - a_MinRelY;
 	int SizeZ = a_MaxRelZ - a_MinRelZ;
 	a_Dest.Clear();
-	a_Dest.m_Origin.x = m_ChunkX * cChunkDef::Width + a_MinRelX;
+	a_Dest.m_Origin.x = m_Coords.m_ChunkX * cChunkDef::Width + a_MinRelX;
 	a_Dest.m_Origin.y = a_MinRelY;
-	a_Dest.m_Origin.z = m_ChunkZ * cChunkDef::Width + a_MinRelZ;
+	a_Dest.m_Origin.z = m_Coords.m_ChunkZ * cChunkDef::Width + a_MinRelZ;
 	a_Dest.SetSize(SizeX, SizeY, SizeZ, cBlockArea::baTypes | cBlockArea::baMetas);
 
 	for (int y = 0; y < SizeY; y++)
@@ -573,32 +572,36 @@ void cChunkDesc::RandomFillRelCuboid(
 
 cBlockEntity * cChunkDesc::GetBlockEntity(int a_RelX, int a_RelY, int a_RelZ)
 {
-	int AbsX = a_RelX + m_ChunkX * cChunkDef::Width;
-	int AbsZ = a_RelZ + m_ChunkZ * cChunkDef::Width;
-	for (cBlockEntityList::iterator itr = m_BlockEntities.begin(), end = m_BlockEntities.end(); itr != end; ++itr)
+	auto Idx = static_cast<size_t>(cChunkDef::MakeIndex(a_RelX, a_RelY, a_RelZ));
+	auto itr = m_BlockEntities.find(Idx);
+
+	if (itr != m_BlockEntities.end())
 	{
-		if (((*itr)->GetPosX() == AbsX) && ((*itr)->GetPosY() == a_RelY) && ((*itr)->GetPosZ() == AbsZ))
+		// Already in the list:
+		cBlockEntity * BlockEntity = itr->second;
+		if (BlockEntity->GetBlockType() == GetBlockType(a_RelX, a_RelY, a_RelZ))
 		{
-			// Already in the list:
-			if ((*itr)->GetBlockType() != GetBlockType(a_RelX, a_RelY, a_RelZ))
-			{
-				// Wrong type, the block type has been overwritten. Erase and create new:
-				m_BlockEntities.erase(itr);
-				break;
-			}
 			// Correct type, already present. Return it:
-			return *itr;
+			return BlockEntity;
 		}
-	}  // for itr - m_BlockEntities[]
-	
+		else
+		{
+			// Wrong type, the block type has been overwritten. Erase and create new:
+			m_BlockEntities.erase(itr);
+		}
+	}
+
+	int AbsX = a_RelX + m_Coords.m_ChunkX * cChunkDef::Width;
+	int AbsZ = a_RelZ + m_Coords.m_ChunkZ * cChunkDef::Width;
+
 	// The block entity is not created yet, try to create it and add to list:
-	cBlockEntity * be = cBlockEntity::CreateByBlockType(GetBlockType(a_RelX, a_RelY, a_RelZ), GetBlockMeta(a_RelX, a_RelY, a_RelZ), AbsX, a_RelY, AbsZ);
+	cBlockEntity * be = cBlockEntity::CreateByBlockType(GetBlockType(a_RelX, a_RelY, a_RelZ), GetBlockMeta(a_RelX, a_RelY, a_RelZ), {AbsX, a_RelY, AbsZ});
 	if (be == nullptr)
 	{
 		// No block entity for this block type
 		return nullptr;
 	}
-	m_BlockEntities.push_back(be);
+	m_BlockEntities.insert({ Idx, be });
 	return be;
 }
 
@@ -612,8 +615,8 @@ void cChunkDesc::UpdateHeightmap(void)
 	{
 		for (int z = 0; z < cChunkDef::Width; z++)
 		{
-			int Height = 0;
-			for (int y = cChunkDef::Height - 1; y > 0; y--)
+			HEIGHTTYPE Height = 0;
+			for (HEIGHTTYPE y = cChunkDef::Height - 1; y > 0; y--)
 			{
 				BLOCKTYPE BlockType = GetBlockType(x, y, z);
 				if (BlockType != E_BLOCK_AIR)
@@ -636,7 +639,7 @@ void cChunkDesc::CompressBlockMetas(cChunkDef::BlockNibbles & a_DestMetas)
 	const NIBBLETYPE * AreaMetas = m_BlockArea.GetBlockMetas();
 	for (size_t i = 0; i < ARRAYCOUNT(a_DestMetas); i++)
 	{
-		a_DestMetas[i] = AreaMetas[2 * i] | (AreaMetas[2 * i + 1] << 4);
+		a_DestMetas[i] = static_cast<NIBBLETYPE>(AreaMetas[2 * i] | (AreaMetas[2 * i + 1] << 4));
 	}
 }
 

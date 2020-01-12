@@ -1,7 +1,7 @@
 #pragma once
 
 #include "BlockHandler.h"
-#include "MetaRotator.h"
+#include "Mixins.h"
 
 
 
@@ -16,23 +16,22 @@ public:
 	{
 	}
 
-	
 	virtual bool GetPlacementBlockTypeMeta(
-		cChunkInterface & a_ChunkInterface, cPlayer * a_Player,
+		cChunkInterface & a_ChunkInterface, cPlayer & a_Player,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
 		int a_CursorX, int a_CursorY, int a_CursorZ,
 		BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta
 	) override
 	{
 		a_BlockType = m_BlockType;
-		a_BlockMeta = PlayerYawToMetaData(a_Player->GetYaw());
+		a_BlockMeta = PlayerYawToMetaData(a_Player.GetYaw());
 		return true;
 	}
 
 	inline static NIBBLETYPE PlayerYawToMetaData(double a_Yaw)
 	{
 		ASSERT((a_Yaw >= -180) && (a_Yaw < 180));
-		
+
 		a_Yaw += 180 + 45;
 		if (a_Yaw > 360)
 		{
@@ -56,6 +55,11 @@ public:
 		}
 	}
 
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 15;
+	}
 } ;
 
 

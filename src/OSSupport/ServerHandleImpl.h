@@ -21,10 +21,10 @@
 
 // fwd:
 class cTCPLinkImpl;
-typedef SharedPtr<cTCPLinkImpl> cTCPLinkImplPtr;
+typedef std::shared_ptr<cTCPLinkImpl> cTCPLinkImplPtr;
 typedef std::vector<cTCPLinkImplPtr> cTCPLinkImplPtrs;
 class cServerHandleImpl;
-typedef SharedPtr<cServerHandleImpl> cServerHandleImplPtr;
+typedef std::shared_ptr<cServerHandleImpl> cServerHandleImplPtr;
 typedef std::vector<cServerHandleImplPtr> cServerHandleImplPtrs;
 
 
@@ -39,7 +39,7 @@ class cServerHandleImpl:
 
 public:
 	/** Closes the server, dropping all the connections. */
-	~cServerHandleImpl();
+	virtual ~cServerHandleImpl() override;
 
 	/** Creates a new server instance listening on the specified port.
 	Both IPv4 and IPv6 interfaces are used, if possible.

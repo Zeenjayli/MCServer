@@ -5,7 +5,6 @@
 
 #include "Globals.h"
 #include "BioGen.h"
-#include <chrono>
 #include <iostream>
 #include "IntGen.h"
 #include "ProtIntGen.h"
@@ -19,8 +18,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 // cBioGenConstant:
 
-void cBioGenConstant::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenConstant::GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
+	UNUSED(a_ChunkCoords);
 	for (size_t i = 0; i < ARRAYCOUNT(a_BiomeMap); i++)
 	{
 		a_BiomeMap[i] = m_Biome;
@@ -33,7 +33,15 @@ void cBioGenConstant::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap 
 
 void cBioGenConstant::InitializeBiomeGen(cIniFile & a_IniFile)
 {
-	AString Biome = a_IniFile.GetValueSet("Generator", "ConstantBiome", "");
+	AString defaultBiome;
+	switch (StringToDimension(a_IniFile.GetValue("General", "Dimension", "Overworld")))
+	{
+		case dimOverworld: defaultBiome = "Plains";    break;
+		case dimNether:    defaultBiome = "Nether";    break;
+		case dimEnd:       defaultBiome = "End";       break;
+		case dimNotSet:    defaultBiome = "Swampland"; break;
+	}
+	AString Biome = a_IniFile.GetValueSet("Generator", "ConstantBiome", defaultBiome);
 	m_Biome = StringToBiome(Biome);
 	if (m_Biome == biInvalidBiome)
 	{
@@ -49,20 +57,18 @@ void cBioGenConstant::InitializeBiomeGen(cIniFile & a_IniFile)
 ////////////////////////////////////////////////////////////////////////////////
 // cBioGenCache:
 
-cBioGenCache::cBioGenCache(cBiomeGenPtr a_BioGenToCache, int a_CacheSize) :
+cBioGenCache::cBioGenCache(cBiomeGenPtr a_BioGenToCache, size_t a_CacheSize) :
 	m_BioGenToCache(a_BioGenToCache),
 	m_CacheSize(a_CacheSize),
-	m_CacheOrder(new int[a_CacheSize]),
-	m_CacheData(new sCacheData[a_CacheSize]),
 	m_NumHits(0),
 	m_NumMisses(0),
 	m_TotalChain(0)
 {
-	for (int i = 0; i < m_CacheSize; i++)
+	m_CacheData.resize(m_CacheSize);
+	m_CacheOrder.resize(m_CacheSize);
+	for (size_t i = 0; i < m_CacheSize; i++)
 	{
 		m_CacheOrder[i] = i;
-		m_CacheData[i].m_ChunkX = 0x7fffffff;
-		m_CacheData[i].m_ChunkZ = 0x7fffffff;
 	}
 }
 
@@ -70,67 +76,51 @@ cBioGenCache::cBioGenCache(cBiomeGenPtr a_BioGenToCache, int a_CacheSize) :
 
 
 
-cBioGenCache::~cBioGenCache()
-{
-	delete[] m_CacheData;
-	m_CacheData = nullptr;
-	delete[] m_CacheOrder;
-	m_CacheOrder = nullptr;
-}
-
-
-
-
-
-void cBioGenCache::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenCache::GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
 	if (((m_NumHits + m_NumMisses) % 1024) == 10)
 	{
-		LOGD("BioGenCache: %d hits, %d misses, saved %.2f %%", m_NumHits, m_NumMisses, 100.0 * m_NumHits / (m_NumHits + m_NumMisses));
-		LOGD("BioGenCache: Avg cache chain length: %.2f", (float)m_TotalChain / m_NumHits);
+		// LOGD("BioGenCache: %u hits, %u misses, saved %.2f %%", static_cast<unsigned>(m_NumHits), static_cast<unsigned>(m_NumMisses), 100.0 * m_NumHits / (m_NumHits + m_NumMisses));
+		// LOGD("BioGenCache: Avg cache chain length: %.2f", static_cast<double>(m_TotalChain) / m_NumHits);
 	}
 
-	for (int i = 0; i < m_CacheSize; i++)
+	for (size_t i = 0; i < m_CacheSize; i++)
 	{
-		if (
-			(m_CacheData[m_CacheOrder[i]].m_ChunkX != a_ChunkX) ||
-			(m_CacheData[m_CacheOrder[i]].m_ChunkZ != a_ChunkZ)
-		)
+		if (m_CacheData[m_CacheOrder[i]].m_Coords != a_ChunkCoords)
 		{
 			continue;
 		}
 		// Found it in the cache
-		int Idx = m_CacheOrder[i];
-		
+		size_t Idx = m_CacheOrder[i];
+
 		// Move to front:
-		for (int j = i; j > 0; j--)
+		for (size_t j = i; j > 0; j--)
 		{
 			m_CacheOrder[j] = m_CacheOrder[j - 1];
 		}
 		m_CacheOrder[0] = Idx;
-		
+
 		// Use the cached data:
 		memcpy(a_BiomeMap, m_CacheData[Idx].m_BiomeMap, sizeof(a_BiomeMap));
-		
+
 		m_NumHits++;
 		m_TotalChain += i;
 		return;
 	}  // for i - cache
-	
+
 	// Not in the cache:
 	m_NumMisses++;
-	m_BioGenToCache->GenBiomes(a_ChunkX, a_ChunkZ, a_BiomeMap);
-	
+	m_BioGenToCache->GenBiomes(a_ChunkCoords, a_BiomeMap);
+
 	// Insert it as the first item in the MRU order:
-	int Idx = m_CacheOrder[m_CacheSize - 1];
-	for (int i = m_CacheSize - 1; i > 0; i--)
+	size_t Idx = m_CacheOrder[m_CacheSize - 1];
+	for (size_t i = m_CacheSize - 1; i > 0; i--)
 	{
 		m_CacheOrder[i] = m_CacheOrder[i - 1];
 	}  // for i - m_CacheOrder[]
 	m_CacheOrder[0] = Idx;
 	memcpy(m_CacheData[Idx].m_BiomeMap, a_BiomeMap, sizeof(a_BiomeMap));
-	m_CacheData[Idx].m_ChunkX = a_ChunkX;
-	m_CacheData[Idx].m_ChunkZ = a_ChunkZ;
+	m_CacheData[Idx].m_Coords = a_ChunkCoords;
 }
 
 
@@ -163,12 +153,12 @@ cBioGenMulticache::cBioGenMulticache(cBiomeGenPtr a_BioGenToCache, size_t a_SubC
 
 
 
-void cBioGenMulticache::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenMulticache::GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
 	const size_t coefficient = 3;
-	const size_t cacheIdx = ((size_t)a_ChunkX + coefficient * (size_t)a_ChunkZ) % m_NumSubCaches;
+	const size_t cacheIdx = (static_cast<size_t>(a_ChunkCoords.m_ChunkX) + coefficient * static_cast<size_t>(a_ChunkCoords.m_ChunkZ)) % m_NumSubCaches;
 
-	m_Caches[cacheIdx]->GenBiomes(a_ChunkX, a_ChunkZ, a_BiomeMap);
+	m_Caches[cacheIdx]->GenBiomes(a_ChunkCoords, a_BiomeMap);
 }
 
 
@@ -226,7 +216,7 @@ void cBiomeGenList::InitializeBiomes(const AString & a_Biomes)
 	}  // for itr - Split[]
 	if (!m_Biomes.empty())
 	{
-		m_BiomesCount = (int)m_Biomes.size();
+		m_BiomesCount = static_cast<int>(m_Biomes.size());
 		return;
 	}
 
@@ -260,7 +250,7 @@ void cBiomeGenList::InitializeBiomes(const AString & a_Biomes)
 	{
 		m_Biomes.push_back(Biomes[i]);
 	}
-	m_BiomesCount = (int)m_Biomes.size();
+	m_BiomesCount = static_cast<int>(m_Biomes.size());
 }
 
 
@@ -270,15 +260,15 @@ void cBiomeGenList::InitializeBiomes(const AString & a_Biomes)
 ////////////////////////////////////////////////////////////////////////////////
 // cBioGenCheckerboard:
 
-void cBioGenCheckerboard::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenCheckerboard::GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
 	for (int z = 0; z < cChunkDef::Width; z++)
 	{
-		int Base = (cChunkDef::Width * a_ChunkZ + z) / m_BiomeSize;
+		int Base = (cChunkDef::Width * a_ChunkCoords.m_ChunkZ + z) / m_BiomeSize;
 		for (int x = 0; x < cChunkDef::Width; x++)
 		{
-			int Add = cChunkDef::Width * a_ChunkX + x;
-			int BiomeIdx = (((Base + Add / m_BiomeSize) % m_BiomesCount) + m_BiomesCount) % m_BiomesCount;  // Need to add and modulo twice because of negative numbers
+			int Add = cChunkDef::Width * a_ChunkCoords.m_ChunkX + x;
+			size_t BiomeIdx = static_cast<size_t>((((Base + Add / m_BiomeSize) % m_BiomesCount) + m_BiomesCount) % m_BiomesCount);  // Need to add and modulo twice because of negative numbers
 			a_BiomeMap[x + cChunkDef::Width * z] = m_Biomes[BiomeIdx];
 		}
 	}
@@ -304,17 +294,17 @@ void cBioGenCheckerboard::InitializeBiomeGen(cIniFile & a_IniFile)
 ////////////////////////////////////////////////////////////////////////////////
 // cBioGenVoronoi :
 
-void cBioGenVoronoi::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenVoronoi::GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
-	int BaseZ = cChunkDef::Width * a_ChunkZ;
-	int BaseX = cChunkDef::Width * a_ChunkX;
+	int BaseZ = cChunkDef::Width * a_ChunkCoords.m_ChunkZ;
+	int BaseX = cChunkDef::Width * a_ChunkCoords.m_ChunkX;
 	for (int z = 0; z < cChunkDef::Width; z++)
 	{
 		int AbsoluteZ = BaseZ + z;
 		for (int x = 0; x < cChunkDef::Width; x++)
 		{
 			int VoronoiCellValue = m_Voronoi.GetValueAt(BaseX + x, AbsoluteZ) / 8;
-			cChunkDef::SetBiome(a_BiomeMap, x, z, m_Biomes[VoronoiCellValue % m_BiomesCount]);
+			cChunkDef::SetBiome(a_BiomeMap, x, z, m_Biomes[static_cast<size_t>(VoronoiCellValue % m_BiomesCount)]);
 		}  // for x
 	}  // for z
 }
@@ -342,11 +332,11 @@ void cBioGenVoronoi::InitializeBiomeGen(cIniFile & a_IniFile)
 ////////////////////////////////////////////////////////////////////////////////
 // cBioGenDistortedVoronoi:
 
-void cBioGenDistortedVoronoi::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenDistortedVoronoi::GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
-	int BaseZ = cChunkDef::Width * a_ChunkZ;
-	int BaseX = cChunkDef::Width * a_ChunkX;
-	
+	int BaseZ = cChunkDef::Width * a_ChunkCoords.m_ChunkZ;
+	int BaseX = cChunkDef::Width * a_ChunkCoords.m_ChunkX;
+
 	// Distortions for linear interpolation:
 	int DistortX[cChunkDef::Width + 1][cChunkDef::Width + 1];
 	int DistortZ[cChunkDef::Width + 1][cChunkDef::Width + 1];
@@ -354,16 +344,16 @@ void cBioGenDistortedVoronoi::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::B
 	{
 		Distort(BaseX + x * 4, BaseZ + z * 4, DistortX[4 * x][4 * z], DistortZ[4 * x][4 * z]);
 	}
-	
+
 	LinearUpscale2DArrayInPlace<cChunkDef::Width + 1, cChunkDef::Width + 1, 4, 4>(&DistortX[0][0]);
 	LinearUpscale2DArrayInPlace<cChunkDef::Width + 1, cChunkDef::Width + 1, 4, 4>(&DistortZ[0][0]);
-	
+
 	for (int z = 0; z < cChunkDef::Width; z++)
 	{
 		for (int x = 0; x < cChunkDef::Width; x++)
 		{
 			int VoronoiCellValue = m_Voronoi.GetValueAt(DistortX[x][z], DistortZ[x][z]) / 8;
-			cChunkDef::SetBiome(a_BiomeMap, x, z, m_Biomes[VoronoiCellValue % m_BiomesCount]);
+			cChunkDef::SetBiome(a_BiomeMap, x, z, m_Biomes[static_cast<size_t>(VoronoiCellValue % m_BiomesCount)]);
 		}  // for x
 	}  // for z
 }
@@ -383,17 +373,18 @@ void cBioGenDistortedVoronoi::InitializeBiomeGen(cIniFile & a_IniFile)
 
 
 
+
 void cBioGenDistortedVoronoi::Distort(int a_BlockX, int a_BlockZ, int & a_DistortedX, int & a_DistortedZ)
 {
-	double NoiseX = m_Noise.CubicNoise3D((float)a_BlockX / m_CellSize, (float)a_BlockZ / m_CellSize, 1000);
-	NoiseX += 0.5 * m_Noise.CubicNoise3D(2 *  (float)a_BlockX / m_CellSize, 2 *  (float)a_BlockZ / m_CellSize, 2000);
-	NoiseX += 0.08 * m_Noise.CubicNoise3D(16 * (float)a_BlockX / m_CellSize, 16 * (float)a_BlockZ / m_CellSize, 3000);
-	double NoiseZ = m_Noise.CubicNoise3D((float)a_BlockX / m_CellSize, (float)a_BlockZ / m_CellSize, 4000);
-	NoiseZ += 0.5 * m_Noise.CubicNoise3D(2 *  (float)a_BlockX / m_CellSize, 2 *  (float)a_BlockZ / m_CellSize, 5000);
-	NoiseZ += 0.08 * m_Noise.CubicNoise3D(16 * (float)a_BlockX / m_CellSize, 16 * (float)a_BlockZ / m_CellSize, 6000);
-	
-	a_DistortedX = a_BlockX + (int)(m_CellSize * 0.5 * NoiseX);
-	a_DistortedZ = a_BlockZ + (int)(m_CellSize * 0.5 * NoiseZ);
+	double NoiseX = m_Noise.CubicNoise3D(static_cast<float>(a_BlockX / m_CellSize), static_cast<float>(a_BlockZ / m_CellSize), 1000);
+	NoiseX += 0.5 * m_Noise.CubicNoise3D(2 *  static_cast<float>(a_BlockX / m_CellSize), 2 *  static_cast<float>(a_BlockZ / m_CellSize), 2000);
+	NoiseX += 0.08 * m_Noise.CubicNoise3D(16 * static_cast<float>(a_BlockX / m_CellSize), 16 * static_cast<float>(a_BlockZ / m_CellSize), 3000);
+	double NoiseZ = m_Noise.CubicNoise3D(static_cast<float>(a_BlockX / m_CellSize), static_cast<float>(a_BlockZ / m_CellSize), 4000);
+	NoiseZ += 0.5 * m_Noise.CubicNoise3D(2 *  static_cast<float>(a_BlockX / m_CellSize), 2 *  static_cast<float>(a_BlockZ / m_CellSize), 5000);
+	NoiseZ += 0.08 * m_Noise.CubicNoise3D(16 * static_cast<float>(a_BlockX / m_CellSize), 16 * static_cast<float>(a_BlockZ / m_CellSize), 6000);
+
+	a_DistortedX = a_BlockX + static_cast<int>(m_CellSize * 0.5 * NoiseX);
+	a_DistortedZ = a_BlockZ + static_cast<int>(m_CellSize * 0.5 * NoiseZ);
 }
 
 
@@ -429,31 +420,31 @@ void cBioGenMultiStepMap::InitializeBiomeGen(cIniFile & a_IniFile)
 	m_MushroomIslandSize  =        a_IniFile.GetValueSetI("Generator", "MultiStepMapMushroomIslandSize", m_MushroomIslandSize);
 	m_RiverCellSize       =        a_IniFile.GetValueSetI("Generator", "MultiStepMapRiverCellSize",      m_RiverCellSize);
 	m_RiverWidthThreshold =        a_IniFile.GetValueSetF("Generator", "MultiStepMapRiverWidth",         m_RiverWidthThreshold);
-	m_LandBiomesSize      = (float)a_IniFile.GetValueSetI("Generator", "MultiStepMapLandBiomeSize",      (int)m_LandBiomesSize);
+	m_LandBiomesSize      = static_cast<float>(a_IniFile.GetValueSetI("Generator", "MultiStepMapLandBiomeSize",      static_cast<int>(m_LandBiomesSize)));
 }
 
 
 
 
 
-void cBioGenMultiStepMap::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenMultiStepMap::GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
-	DecideOceanLandMushroom(a_ChunkX, a_ChunkZ, a_BiomeMap);
-	AddRivers(a_ChunkX, a_ChunkZ, a_BiomeMap);
-	ApplyTemperatureHumidity(a_ChunkX, a_ChunkZ, a_BiomeMap);
+	DecideOceanLandMushroom(a_ChunkCoords, a_BiomeMap);
+	AddRivers(a_ChunkCoords, a_BiomeMap);
+	ApplyTemperatureHumidity(a_ChunkCoords, a_BiomeMap);
 }
 
 
 
 
 
-void cBioGenMultiStepMap::DecideOceanLandMushroom(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenMultiStepMap::DecideOceanLandMushroom(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
 	// Distorted Voronoi over 3 biomes, with mushroom having only a special occurence.
-	
+
 	// Prepare a distortion lookup table, by distorting a 5x5 area and using that as 1:4 zoom (linear interpolate):
-	int BaseZ = cChunkDef::Width * a_ChunkZ;
-	int BaseX = cChunkDef::Width * a_ChunkX;
+	int BaseZ = cChunkDef::Width * a_ChunkCoords.m_ChunkZ;
+	int BaseX = cChunkDef::Width * a_ChunkCoords.m_ChunkX;
 	int DistortX[cChunkDef::Width + 1][cChunkDef::Width + 1];
 	int DistortZ[cChunkDef::Width + 1][cChunkDef::Width + 1];
 	int DistortSize = m_OceanCellSize / 2;
@@ -463,7 +454,7 @@ void cBioGenMultiStepMap::DecideOceanLandMushroom(int a_ChunkX, int a_ChunkZ, cC
 	}
 	LinearUpscale2DArrayInPlace<cChunkDef::Width + 1, cChunkDef::Width + 1, 4, 4>(&DistortX[0][0]);
 	LinearUpscale2DArrayInPlace<cChunkDef::Width + 1, cChunkDef::Width + 1, 4, 4>(&DistortZ[0][0]);
-	
+
 	// Prepare a 9x9 area of neighboring cell seeds
 	// (assuming that 7x7 cell area is larger than a chunk being generated)
 	const int NEIGHBORHOOD_SIZE = 4;  // How many seeds in each direction to check
@@ -487,7 +478,7 @@ void cBioGenMultiStepMap::DecideOceanLandMushroom(int a_ChunkX, int a_ChunkZ, cC
 			SeedV[xc][zc] = (((m_Noise6.IntNoise3DInt(RealCellX, RealCellX - RealCellZ + 1000, RealCellZ) / 11) % 256) > 90) ? biOcean : (biInvalidBiome);
 		}  // for z
 	}  // for x
-	
+
 	for (int xc = 1; xc < 2 * NEIGHBORHOOD_SIZE; xc++) for (int zc = 1; zc < 2 * NEIGHBORHOOD_SIZE; zc++)
 	{
 		if (
@@ -505,7 +496,7 @@ void cBioGenMultiStepMap::DecideOceanLandMushroom(int a_ChunkX, int a_ChunkZ, cC
 			SeedV[xc][zc] = biMushroomIsland;
 		}
 	}
-	
+
 	// For each column find the nearest distorted cell and use its value as the biome:
 	int MushroomOceanThreshold = m_OceanCellSize * m_OceanCellSize * m_MushroomIslandSize / 1024;
 	int MushroomShoreThreshold = m_OceanCellSize * m_OceanCellSize * m_MushroomIslandSize / 2048;
@@ -550,11 +541,11 @@ void cBioGenMultiStepMap::DecideOceanLandMushroom(int a_ChunkX, int a_ChunkZ, cC
 
 
 
-void cBioGenMultiStepMap::AddRivers(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenMultiStepMap::AddRivers(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
 	for (int z = 0; z < cChunkDef::Width; z++)
 	{
-		float NoiseCoordZ = (float)(a_ChunkZ * cChunkDef::Width + z) / m_RiverCellSize;
+		float NoiseCoordZ = static_cast<float>(a_ChunkCoords.m_ChunkZ * cChunkDef::Width + z) / m_RiverCellSize;
 		for (int x = 0; x < cChunkDef::Width; x++)
 		{
 			if (cChunkDef::GetBiome(a_BiomeMap, x, z) != biInvalidBiome)
@@ -562,13 +553,13 @@ void cBioGenMultiStepMap::AddRivers(int a_ChunkX, int a_ChunkZ, cChunkDef::Biome
 				// Biome already set, skip this column
 				continue;
 			}
-			
-			float NoiseCoordX = (float)(a_ChunkX * cChunkDef::Width + x) / m_RiverCellSize;
-		
+
+			float NoiseCoordX = static_cast<float>(a_ChunkCoords.m_ChunkX * cChunkDef::Width + x) / m_RiverCellSize;
+
 			double Noise = m_Noise1.CubicNoise2D(    NoiseCoordX,     NoiseCoordZ);
 			Noise += 0.5 * m_Noise3.CubicNoise2D(2 * NoiseCoordX, 2 * NoiseCoordZ);
 			Noise += 0.1 * m_Noise5.CubicNoise2D(8 * NoiseCoordX, 8 * NoiseCoordZ);
-			
+
 			if ((Noise > 0) && (Noise < m_RiverWidthThreshold))
 			{
 				cChunkDef::SetBiome(a_BiomeMap, x, z, biRiver);
@@ -581,12 +572,12 @@ void cBioGenMultiStepMap::AddRivers(int a_ChunkX, int a_ChunkZ, cChunkDef::Biome
 
 
 
-void cBioGenMultiStepMap::ApplyTemperatureHumidity(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenMultiStepMap::ApplyTemperatureHumidity(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
 	IntMap TemperatureMap;
 	IntMap HumidityMap;
-	BuildTemperatureHumidityMaps(a_ChunkX, a_ChunkZ, TemperatureMap, HumidityMap);
-	
+	BuildTemperatureHumidityMaps(a_ChunkCoords, TemperatureMap, HumidityMap);
+
 	FreezeWaterBiomes(a_BiomeMap, TemperatureMap);
 	DecideLandBiomes(a_BiomeMap, TemperatureMap, HumidityMap);
 }
@@ -597,33 +588,33 @@ void cBioGenMultiStepMap::ApplyTemperatureHumidity(int a_ChunkX, int a_ChunkZ, c
 
 void cBioGenMultiStepMap::Distort(int a_BlockX, int a_BlockZ, int & a_DistortedX, int & a_DistortedZ, int a_CellSize)
 {
-	double NoiseX = m_Noise3.CubicNoise2D(     (float)a_BlockX / a_CellSize,      (float)a_BlockZ / a_CellSize);
-	NoiseX += 0.5 * m_Noise2.CubicNoise2D(2 *  (float)a_BlockX / a_CellSize, 2 *  (float)a_BlockZ / a_CellSize);
-	NoiseX += 0.1 * m_Noise1.CubicNoise2D(16 * (float)a_BlockX / a_CellSize, 16 * (float)a_BlockZ / a_CellSize);
-	double NoiseZ = m_Noise6.CubicNoise2D(     (float)a_BlockX / a_CellSize,      (float)a_BlockZ / a_CellSize);
-	NoiseZ += 0.5 * m_Noise5.CubicNoise2D(2 *  (float)a_BlockX / a_CellSize, 2 *  (float)a_BlockZ / a_CellSize);
-	NoiseZ += 0.1 * m_Noise4.CubicNoise2D(16 * (float)a_BlockX / a_CellSize, 16 * (float)a_BlockZ / a_CellSize);
-	
-	a_DistortedX = a_BlockX + (int)(a_CellSize * 0.5 * NoiseX);
-	a_DistortedZ = a_BlockZ + (int)(a_CellSize * 0.5 * NoiseZ);
+	double NoiseX = m_Noise3.CubicNoise2D(     static_cast<float>(a_BlockX / a_CellSize),      static_cast<float>(a_BlockZ / a_CellSize));
+	NoiseX += 0.5 * m_Noise2.CubicNoise2D(2 *  static_cast<float>(a_BlockX / a_CellSize), 2 *  static_cast<float>(a_BlockZ / a_CellSize));
+	NoiseX += 0.1 * m_Noise1.CubicNoise2D(16 * static_cast<float>(a_BlockX / a_CellSize), 16 * static_cast<float>(a_BlockZ / a_CellSize));
+	double NoiseZ = m_Noise6.CubicNoise2D(     static_cast<float>(a_BlockX / a_CellSize),      static_cast<float>(a_BlockZ / a_CellSize));
+	NoiseZ += 0.5 * m_Noise5.CubicNoise2D(2 *  static_cast<float>(a_BlockX / a_CellSize), 2 *  static_cast<float>(a_BlockZ / a_CellSize));
+	NoiseZ += 0.1 * m_Noise4.CubicNoise2D(16 * static_cast<float>(a_BlockX / a_CellSize), 16 * static_cast<float>(a_BlockZ / a_CellSize));
+
+	a_DistortedX = a_BlockX + static_cast<int>(a_CellSize * 0.5 * NoiseX);
+	a_DistortedZ = a_BlockZ + static_cast<int>(a_CellSize * 0.5 * NoiseZ);
 }
 
 
 
 
 
-void cBioGenMultiStepMap::BuildTemperatureHumidityMaps(int a_ChunkX, int a_ChunkZ, IntMap & a_TemperatureMap, IntMap & a_HumidityMap)
+void cBioGenMultiStepMap::BuildTemperatureHumidityMaps(cChunkCoords a_ChunkCoords, IntMap & a_TemperatureMap, IntMap & a_HumidityMap)
 {
 	// Linear interpolation over 8x8 blocks; use double for better precision:
 	DblMap TemperatureMap;
 	DblMap HumidityMap;
 	for (int z = 0; z < 17; z += 8)
 	{
-		float NoiseCoordZ = (float)(a_ChunkZ * cChunkDef::Width + z) / m_LandBiomesSize;
+		float NoiseCoordZ = static_cast<float>(a_ChunkCoords.m_ChunkZ * cChunkDef::Width + z) / m_LandBiomesSize;
 		for (int x = 0; x < 17; x += 8)
 		{
-			float NoiseCoordX = (float)(a_ChunkX * cChunkDef::Width + x) / m_LandBiomesSize;
-		
+			float NoiseCoordX = static_cast<float>(a_ChunkCoords.m_ChunkX * cChunkDef::Width + x) / m_LandBiomesSize;
+
 			double NoiseT = m_Noise1.CubicNoise2D(    NoiseCoordX,     NoiseCoordZ);
 			NoiseT += 0.5 * m_Noise2.CubicNoise2D(2 * NoiseCoordX, 2 * NoiseCoordZ);
 			NoiseT += 0.1 * m_Noise3.CubicNoise2D(8 * NoiseCoordX, 8 * NoiseCoordZ);
@@ -637,12 +628,12 @@ void cBioGenMultiStepMap::BuildTemperatureHumidityMaps(int a_ChunkX, int a_Chunk
 	}  // for z
 	LinearUpscale2DArrayInPlace<17, 17, 8, 8>(TemperatureMap);
 	LinearUpscale2DArrayInPlace<17, 17, 8, 8>(HumidityMap);
-	
+
 	// Re-map into integral values in [0 .. 255] range:
 	for (size_t idx = 0; idx < ARRAYCOUNT(a_TemperatureMap); idx++)
 	{
-		a_TemperatureMap[idx] = std::max(0, std::min(255, (int)(128 + TemperatureMap[idx] * 128)));
-		a_HumidityMap[idx]    = std::max(0, std::min(255, (int)(128 + HumidityMap[idx]    * 128)));
+		a_TemperatureMap[idx] = Clamp(static_cast<int>(128 + TemperatureMap[idx] * 128), 0, 255);
+		a_HumidityMap[idx]    = Clamp(static_cast<int>(128 + HumidityMap[idx]    * 128), 0, 255);
 	}
 }
 
@@ -752,11 +743,11 @@ cBioGenTwoLevel::cBioGenTwoLevel(int a_Seed) :
 
 
 
-void cBioGenTwoLevel::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_BiomeMap)
+void cBioGenTwoLevel::GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_BiomeMap)
 {
-	int BaseZ = cChunkDef::Width * a_ChunkZ;
-	int BaseX = cChunkDef::Width * a_ChunkX;
-	
+	int BaseZ = cChunkDef::Width * a_ChunkCoords.m_ChunkZ;
+	int BaseX = cChunkDef::Width * a_ChunkCoords.m_ChunkX;
+
 	// Distortions for linear interpolation:
 	int DistortX[cChunkDef::Width + 1][cChunkDef::Width + 1];
 	int DistortZ[cChunkDef::Width + 1][cChunkDef::Width + 1];
@@ -770,14 +761,14 @@ void cBioGenTwoLevel::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap 
 		double NoiseZ = m_AmpZ1 * m_Noise4.CubicNoise2D(BlockX * m_FreqZ1, BlockZ * m_FreqZ1);
 		NoiseZ       += m_AmpZ2 * m_Noise5.CubicNoise2D(BlockX * m_FreqZ2, BlockZ * m_FreqZ2);
 		NoiseZ       += m_AmpZ3 * m_Noise6.CubicNoise2D(BlockX * m_FreqZ3, BlockZ * m_FreqZ3);
-		
-		DistortX[4 * x][4 * z] = (int)(BlockX + NoiseX);
-		DistortZ[4 * x][4 * z] = (int)(BlockZ + NoiseZ);
+
+		DistortX[4 * x][4 * z] = static_cast<int>(BlockX + NoiseX);
+		DistortZ[4 * x][4 * z] = static_cast<int>(BlockZ + NoiseZ);
 	}
-	
+
 	LinearUpscale2DArrayInPlace<cChunkDef::Width + 1, cChunkDef::Width + 1, 4, 4>(&DistortX[0][0]);
 	LinearUpscale2DArrayInPlace<cChunkDef::Width + 1, cChunkDef::Width + 1, 4, 4>(&DistortZ[0][0]);
-	
+
 	// Apply distortion to each block coord, then query the voronoi maps for biome group and biome index and choose biome based on that:
 	for (int z = 0; z < cChunkDef::Width; z++)
 	{
@@ -785,7 +776,7 @@ void cBioGenTwoLevel::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap 
 		{
 			int SeedX, SeedZ, MinDist2;
 			int BiomeGroup = m_VoronoiLarge.GetValueAt(DistortX[x][z], DistortZ[x][z], SeedX, SeedZ, MinDist2) / 7;
-			int BiomeIdx   = m_VoronoiSmall.GetValueAt(DistortX[x][z], DistortZ[x][z], SeedX, SeedZ, MinDist2) / 11;
+			size_t BiomeIdx   = static_cast<size_t>(m_VoronoiSmall.GetValueAt(DistortX[x][z], DistortZ[x][z], SeedX, SeedZ, MinDist2) / 11);
 			int MinDist1 = (DistortX[x][z] - SeedX) * (DistortX[x][z] - SeedX) + (DistortZ[x][z] - SeedZ) * (DistortZ[x][z] - SeedZ);
 			cChunkDef::SetBiome(a_BiomeMap, x, z, SelectBiome(BiomeGroup, BiomeIdx, (MinDist1 < MinDist2 / 4) ? 1 : 0));
 		}
@@ -796,7 +787,7 @@ void cBioGenTwoLevel::GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap 
 
 
 
-EMCSBiome cBioGenTwoLevel::SelectBiome(int a_BiomeGroup, int a_BiomeIdx, int a_DistLevel)
+EMCSBiome cBioGenTwoLevel::SelectBiome(int a_BiomeGroup, size_t a_BiomeIdx, int a_DistLevel)
 {
 	// TODO: Move this into settings
 	struct BiomeLevels
@@ -804,7 +795,7 @@ EMCSBiome cBioGenTwoLevel::SelectBiome(int a_BiomeGroup, int a_BiomeIdx, int a_D
 		EMCSBiome InnerBiome;
 		EMCSBiome OuterBiome;
 	} ;
-	
+
 	static BiomeLevels bgOcean[] =
 	{
 		{ biOcean, biOcean, },
@@ -900,7 +891,7 @@ EMCSBiome cBioGenTwoLevel::SelectBiome(int a_BiomeGroup, int a_BiomeIdx, int a_D
 		{ bgMesa,       ARRAYCOUNT(bgMesa), },
 		{ bgDenseTrees, ARRAYCOUNT(bgDenseTrees), },
 	} ;
-	size_t Group = a_BiomeGroup % ARRAYCOUNT(BiomeGroups);
+	size_t Group = static_cast<size_t>(a_BiomeGroup) % ARRAYCOUNT(BiomeGroups);
 	size_t Index = a_BiomeIdx % BiomeGroups[Group].Count;
 	return (a_DistLevel > 0) ? BiomeGroups[Group].Biomes[Index].InnerBiome : BiomeGroups[Group].Biomes[Index].OuterBiome;
 }
@@ -913,18 +904,18 @@ void cBioGenTwoLevel::InitializeBiomeGen(cIniFile & a_IniFile)
 {
 	m_VoronoiLarge.SetCellSize(a_IniFile.GetValueSetI("Generator", "TwoLevelLargeCellSize", 1024));
 	m_VoronoiSmall.SetCellSize(a_IniFile.GetValueSetI("Generator", "TwoLevelSmallCellSize", 128));
-	m_FreqX1 = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave1Freq", 0.01);
-	m_AmpX1  = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave1Amp",  80);
-	m_FreqX2 = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave2Freq", 0.05);
-	m_AmpX2  = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave2Amp",  20);
-	m_FreqX3 = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave3Freq", 0.1),
-	m_AmpX3  = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave3Amp",  8);
-	m_FreqZ1 = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave1Freq", 0.01);
-	m_AmpZ1  = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave1Amp",  80);
-	m_FreqZ2 = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave2Freq", 0.05);
-	m_AmpZ2  = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave2Amp",  20);
-	m_FreqZ3 = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave3Freq", 0.1);
-	m_AmpZ3  = (float)a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave3Amp",  8);
+	m_FreqX1 = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave1Freq", 0.01));
+	m_AmpX1  = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave1Amp",  80));
+	m_FreqX2 = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave2Freq", 0.05));
+	m_AmpX2  = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave2Amp",  20));
+	m_FreqX3 = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave3Freq", 0.1));
+	m_AmpX3  = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortXOctave3Amp",  8));
+	m_FreqZ1 = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave1Freq", 0.01));
+	m_AmpZ1  = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave1Amp",  80));
+	m_FreqZ2 = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave2Freq", 0.05));
+	m_AmpZ2  = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave2Amp",  20));
+	m_FreqZ3 = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave3Freq", 0.1));
+	m_AmpZ3  = static_cast<float>(a_IniFile.GetValueSetF("Generator", "TwoLevelDistortZOctave3Amp",  8));
 }
 
 
@@ -941,7 +932,7 @@ public:
 	cBioGenGrown(int a_Seed)
 	{
 		auto FinalRivers =
-		
+
 			std::make_shared<cIntGenChoice<2, 7>>(a_Seed + 12)
 			| MakeIntGen<cIntGenZoom  <10>>(a_Seed + 11)
 			| MakeIntGen<cIntGenSmooth<8>>(a_Seed + 6)
@@ -1014,15 +1005,15 @@ public:
 		)))));
 	}
 
-	virtual void GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_Biomes) override
+	virtual void GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_Biomes) override
 	{
 		cIntGen<16, 16>::Values vals;
-		m_Gen->GetInts(a_ChunkX * cChunkDef::Width, a_ChunkZ * cChunkDef::Width, vals);
+		m_Gen->GetInts(a_ChunkCoords.m_ChunkX * cChunkDef::Width, a_ChunkCoords.m_ChunkZ * cChunkDef::Width, vals);
 		for (int z = 0; z < cChunkDef::Width; z++)
 		{
 			for (int x = 0; x < cChunkDef::Width; x++)
 			{
-				cChunkDef::SetBiome(a_Biomes, x, z, (EMCSBiome)vals[x + cChunkDef::Width * z]);
+				cChunkDef::SetBiome(a_Biomes, x, z, static_cast<EMCSBiome>(vals[x + cChunkDef::Width * z]));
 			}
 		}
 	}
@@ -1118,15 +1109,15 @@ public:
 		)))));
 	}
 
-	virtual void GenBiomes(int a_ChunkX, int a_ChunkZ, cChunkDef::BiomeMap & a_Biomes) override
+	virtual void GenBiomes(cChunkCoords a_ChunkCoords, cChunkDef::BiomeMap & a_Biomes) override
 	{
 		int vals[16 * 16];
-		m_Gen->GetInts(a_ChunkX * cChunkDef::Width, a_ChunkZ * cChunkDef::Width, 16, 16, vals);
+		m_Gen->GetInts(a_ChunkCoords.m_ChunkX * cChunkDef::Width, a_ChunkCoords.m_ChunkZ * cChunkDef::Width, 16, 16, vals);
 		for (int z = 0; z < cChunkDef::Width; z++)
 		{
 			for (int x = 0; x < cChunkDef::Width; x++)
 			{
-				cChunkDef::SetBiome(a_Biomes, x, z, (EMCSBiome)vals[x + cChunkDef::Width * z]);
+				cChunkDef::SetBiome(a_Biomes, x, z, static_cast<EMCSBiome>(vals[x + cChunkDef::Width * z]));
 			}
 		}
 	}
@@ -1144,11 +1135,11 @@ protected:
 
 cBiomeGenPtr cBiomeGen::CreateBiomeGen(cIniFile & a_IniFile, int a_Seed, bool & a_CacheOffByDefault)
 {
-	AString BiomeGenName = a_IniFile.GetValueSet("Generator", "BiomeGen", "");
+	AString BiomeGenName = a_IniFile.GetValue("Generator", "BiomeGen");
 	if (BiomeGenName.empty())
 	{
-		LOGWARN("[Generator] BiomeGen value not set in world.ini, using \"MultiStepMap\".");
-		BiomeGenName = "MultiStepMap";
+		LOGWARN("[Generator] BiomeGen value not set in world.ini, using \"Grown\".");
+		BiomeGenName = "Grown";
 	}
 
 	cBiomeGen * res = nullptr;
@@ -1175,9 +1166,9 @@ cBiomeGenPtr cBiomeGen::CreateBiomeGen(cIniFile & a_IniFile, int a_Seed, bool & 
 	{
 		res = new cBioGenTwoLevel(a_Seed);
 	}
-	else if (NoCaseCompare(BiomeGenName, "grown") == 0)
+	else if (NoCaseCompare(BiomeGenName, "multistepmap") == 0)
 	{
-		res = new cBioGenGrown(a_Seed);
+		res = new cBioGenMultiStepMap(a_Seed);
 	}
 	else if (NoCaseCompare(BiomeGenName, "grownprot") == 0)
 	{
@@ -1185,24 +1176,11 @@ cBiomeGenPtr cBiomeGen::CreateBiomeGen(cIniFile & a_IniFile, int a_Seed, bool & 
 	}
 	else
 	{
-		if (NoCaseCompare(BiomeGenName, "multistepmap") != 0)
+		if (NoCaseCompare(BiomeGenName, "grown") != 0)
 		{
-			LOGWARNING("Unknown BiomeGen \"%s\", using \"MultiStepMap\" instead.", BiomeGenName.c_str());
+			LOGWARNING("Unknown BiomeGen \"%s\", using \"Grown\" instead.", BiomeGenName.c_str());
 		}
-		res = new cBioGenMultiStepMap(a_Seed);
-
-		/*
-		// Performance-testing:
-		LOGINFO("Measuring performance of cBioGenMultiStepMap...");
-		clock_t BeginTick = clock();
-		for (int x = 0; x < 5000; x++)
-		{
-			cChunkDef::BiomeMap Biomes;
-			res->GenBiomes(x * 5, x * 5, Biomes);
-		}
-		clock_t Duration = clock() - BeginTick;
-		LOGINFO("cBioGenMultiStepMap for 5000 chunks took %d ticks (%.02f sec)", Duration, (double)Duration / CLOCKS_PER_SEC);
-		//*/
+		res = new cBioGenGrown(a_Seed);
 	}
 	res->InitializeBiomeGen(a_IniFile);
 

@@ -12,7 +12,7 @@
 
 
 #if defined(_MSC_VER) && defined(_DEBUG)
-	// Code adapted from MSDN: http://msdn.microsoft.com/en-us/library/xcb2z8hs.aspx
+	// Code adapted from MSDN: https://msdn.microsoft.com/en-us/library/xcb2z8hs.aspx
 
 	const DWORD MS_VC_EXCEPTION = 0x406D1388;
 	#pragma pack(push, 8)
@@ -60,8 +60,7 @@ cIsThread::cIsThread(const AString & a_ThreadName) :
 
 cIsThread::~cIsThread()
 {
-	m_ShouldTerminate = true;
-	Wait();
+	Stop();
 }
 
 
@@ -110,14 +109,9 @@ bool cIsThread::Start(void)
 
 void cIsThread::Stop(void)
 {
-	if (!m_Thread.joinable())
-	{
-		// The thread hasn't been started or has already been joined
-		return;
-	}
-
 	m_ShouldTerminate = true;
 	Wait();
+	m_ShouldTerminate = false;
 }
 
 
@@ -134,9 +128,9 @@ bool cIsThread::Wait(void)
 			m_Thread.join();
 			return true;
 		}
-		catch (std::system_error & a_Exception)
+		catch (const std::system_error & a_Exception)
 		{
-			LOGERROR("cIsThread::Wait error %i: could not join thread %s; %s", a_Exception.code().value(), m_ThreadName.c_str(), a_Exception.code().message().c_str());
+			LOGERROR("%s error %i: could not join thread %s; %s", __FUNCTION__, a_Exception.code().value(), m_ThreadName.c_str(), a_Exception.code().message().c_str());
 			return false;
 		}
 	}
@@ -144,7 +138,3 @@ bool cIsThread::Wait(void)
 	LOGD("Thread %s finished", m_ThreadName.c_str());
 	return true;
 }
-
-
-
-

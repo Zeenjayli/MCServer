@@ -10,33 +10,63 @@
 
 
 
-/** Returns true if all a_Array's elements between [0] and [a_NumElements - 1] are equal to a_Value. */
-template <typename T> inline bool IsAllValue(const T * a_Array, size_t a_NumElements, T a_Value)
+namespace
 {
-	for (size_t i = 0; i < a_NumElements; i++)
+	/** Returns true if all a_Array's elements between [0] and [a_NumElements - 1] are equal to a_Value. */
+	template <typename T>
+	bool IsAllValue(const T * a_Array, size_t a_NumElements, T a_Value)
 	{
-		if (a_Array[i] != a_Value)
+		for (size_t i = 0; i < a_NumElements; i++)
 		{
-			return false;
+			if (a_Array[i] != a_Value)
+			{
+				return false;
+			}
 		}
+		return true;
 	}
-	return true;
+
+
+
+
+
+	struct sSectionIndices
+	{
+		int Section = 0;  // Index into m_Sections
+		int Index = 0;    // Index into a single sChunkSection
+	};
+
+	sSectionIndices IndicesFromRelPos(Vector3i a_RelPos)
+	{
+		ASSERT(cChunkDef::IsValidRelPos(a_RelPos));
+		sSectionIndices Ret;
+		Ret.Section = a_RelPos.y / cChunkData::SectionHeight;
+		Ret.Index = cChunkDef::MakeIndexNoCheck(a_RelPos.x, a_RelPos.y % cChunkData::SectionHeight, a_RelPos.z);
+		return Ret;
+	}
+}  // namespace (anonymous)
+
+
+
+
+
+cChunkData::cChunkData(cAllocationPool<cChunkData::sChunkSection> & a_Pool):
+	m_Sections(),
+	m_Pool(a_Pool)
+{
 }
 
 
 
 
 
-cChunkData::cChunkData(cAllocationPool<cChunkData::sChunkSection> & a_Pool) :
-#if __cplusplus < 201103L
-	// auto_ptr style interface for memory management
-	m_IsOwner(true),
-#endif
-	m_Pool(a_Pool)
+cChunkData::cChunkData(cChunkData && a_Other):
+	m_Pool(a_Other.m_Pool)
 {
 	for (size_t i = 0; i < NumSections; i++)
 	{
-		m_Sections[i] = nullptr;
+		m_Sections[i] = a_Other.m_Sections[i];
+		a_Other.m_Sections[i] = nullptr;
 	}
 }
 
@@ -46,17 +76,29 @@ cChunkData::cChunkData(cAllocationPool<cChunkData::sChunkSection> & a_Pool) :
 
 cChunkData::~cChunkData()
 {
-	#if __cplusplus < 201103L
-		// auto_ptr style interface for memory management
-		if (!m_IsOwner)
-		{
-			return;
-		}
-	#endif
-	for (size_t i = 0; i < NumSections; i++)
+	Clear();
+}
+
+
+
+
+
+void cChunkData::Assign(const cChunkData & a_Other)
+{
+	// If assigning to self, no-op
+	if (&a_Other == this)
 	{
-		Free(m_Sections[i]);
-		m_Sections[i] = nullptr;
+		return;
+	}
+
+	Clear();
+	for (size_t i = 0; i < NumSections; ++i)
+	{
+		if (a_Other.m_Sections[i] != nullptr)
+		{
+			m_Sections[i] = Allocate();
+			*m_Sections[i] = *a_Other.m_Sections[i];
+		}
 	}
 }
 
@@ -64,100 +106,43 @@ cChunkData::~cChunkData()
 
 
 
-#if __cplusplus < 201103L
-	// auto_ptr style interface for memory management
-	cChunkData::cChunkData(const cChunkData & a_Other) :
-		m_IsOwner(true),
-		m_Pool(a_Other.m_Pool)
-	{
-		// Move contents and ownership from a_Other to this, pointer-wise:
-		for (size_t i = 0; i < NumSections; i++)
-		{
-			m_Sections[i] = a_Other.m_Sections[i];
-		}
-		a_Other.m_IsOwner = false;
-	}
-
-
-
-
-
-	cChunkData & cChunkData::operator =(const cChunkData & a_Other)
-	{
-		// If assigning to self, no-op
-		if (&a_Other == this)
-		{
-			return *this;
-		}
-		
-		// Free any currently held contents:
-		if (m_IsOwner)
-		{
-			for (size_t i = 0; i < NumSections; i++)
-			{
-				Free(m_Sections[i]);
-				m_Sections[i] = nullptr;
-			}
-		}
-
-		// Move contents and ownership from a_Other to this, pointer-wise:
-		m_IsOwner = true;
-		for (size_t i = 0; i < NumSections; i++)
-		{
-			m_Sections[i] = a_Other.m_Sections[i];
-		}
-		a_Other.m_IsOwner = false;
-		ASSERT(&m_Pool == &a_Other.m_Pool);
-		return *this;
-	}
-	
-#else
-
-	// unique_ptr style interface for memory management
-	cChunkData::cChunkData(cChunkData && other) :
-	m_Pool(other.m_Pool)
-	{
-		for (size_t i = 0; i < NumSections; i++)
-		{
-			m_Sections[i] = other.m_Sections[i];
-			other.m_Sections[i] = nullptr;
-		}
-	}
-	
-	
-	
-	
-
-	cChunkData & cChunkData::operator =(cChunkData && other)
-	{
-		if (&other != this)
-		{
-			ASSERT(&m_Pool == &other.m_Pool);
-			for (size_t i = 0; i < NumSections; i++)
-			{
-				Free(m_Sections[i]);
-				m_Sections[i] = other.m_Sections[i];
-				other.m_Sections[i] = nullptr;
-			}
-		}
-		return *this;
-	}
-#endif
-
-
-
-
-
-BLOCKTYPE cChunkData::GetBlock(int a_X, int a_Y, int a_Z) const
+void cChunkData::Assign(cChunkData && a_Other)
 {
-	ASSERT((a_X >= 0) && (a_X < cChunkDef::Width));
-	ASSERT((a_Y >= 0) && (a_Y < cChunkDef::Height));
-	ASSERT((a_Z >= 0) && (a_Z < cChunkDef::Width));
-	int Section = a_Y / SectionHeight;
-	if (m_Sections[Section] != nullptr)
+	if (&a_Other == this)
 	{
-		int Index = cChunkDef::MakeIndexNoCheck(a_X, a_Y - (Section * SectionHeight), a_Z);
-		return m_Sections[Section]->m_BlockTypes[Index];
+		return;
+	}
+
+	if (m_Pool != a_Other.m_Pool)
+	{
+		// Cannot transfer the memory, do a copy instead
+		const cChunkData & CopyOther = a_Other;
+		Assign(CopyOther);
+		return;
+	}
+
+	Clear();
+	for (size_t i = 0; i < NumSections; i++)
+	{
+		m_Sections[i] = a_Other.m_Sections[i];
+		a_Other.m_Sections[i] = nullptr;
+	}
+}
+
+
+
+
+
+BLOCKTYPE cChunkData::GetBlock(Vector3i a_RelPos) const
+{
+	if (!cChunkDef::IsValidRelPos(a_RelPos))
+	{
+		return E_BLOCK_AIR;  // Coordinates are outside outside the world, so this must be an air block
+	}
+	auto Idxs = IndicesFromRelPos(a_RelPos);
+	if (m_Sections[Idxs.Section] != nullptr)
+	{
+		return m_Sections[Idxs.Section]->m_BlockTypes[Idxs.Index];
 	}
 	else
 	{
@@ -169,60 +154,51 @@ BLOCKTYPE cChunkData::GetBlock(int a_X, int a_Y, int a_Z) const
 
 
 
-void cChunkData::SetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_Block)
+void cChunkData::SetBlock(Vector3i a_RelPos, BLOCKTYPE a_Block)
 {
-	if (
-		(a_RelX >= cChunkDef::Width)  || (a_RelX < 0) ||
-		(a_RelY >= cChunkDef::Height) || (a_RelY < 0) ||
-		(a_RelZ >= cChunkDef::Width)  || (a_RelZ < 0)
-	)
+	if (!cChunkDef::IsValidRelPos(a_RelPos))
 	{
 		ASSERT(!"cChunkData::SetMeta(): index out of range!");
 		return;
 	}
 
-	int Section = a_RelY / SectionHeight;
-	if (m_Sections[Section] == nullptr)
+	auto Idxs = IndicesFromRelPos(a_RelPos);
+	if (m_Sections[Idxs.Section] == nullptr)
 	{
 		if (a_Block == 0x00)
 		{
 			return;
 		}
-		m_Sections[Section] = Allocate();
-		if (m_Sections[Section] == nullptr)
+		m_Sections[Idxs.Section] = Allocate();
+		if (m_Sections[Idxs.Section] == nullptr)
 		{
 			ASSERT(!"Failed to allocate a new section in Chunkbuffer");
 			return;
 		}
-		ZeroSection(m_Sections[Section]);
+		ZeroSection(m_Sections[Idxs.Section]);
 	}
-	int Index = cChunkDef::MakeIndexNoCheck(a_RelX, a_RelY - (Section * SectionHeight), a_RelZ);
-	m_Sections[Section]->m_BlockTypes[Index] = a_Block;
+	m_Sections[Idxs.Section]->m_BlockTypes[Idxs.Index] = a_Block;
 }
 
 
 
 
 
-NIBBLETYPE cChunkData::GetMeta(int a_RelX, int a_RelY, int a_RelZ) const
+NIBBLETYPE cChunkData::GetMeta(Vector3i a_RelPos) const
 {
-	if (
-		(a_RelX < cChunkDef::Width) && (a_RelX > -1) &&
-		(a_RelY < cChunkDef::Height) && (a_RelY > -1) &&
-		(a_RelZ < cChunkDef::Width) && (a_RelZ > -1))
+	if (cChunkDef::IsValidRelPos(a_RelPos))
 	{
-		int Section = a_RelY / SectionHeight;
-		if (m_Sections[Section] != nullptr)
+		auto Idxs = IndicesFromRelPos(a_RelPos);
+		if (m_Sections[Idxs.Section] != nullptr)
 		{
-			int Index = cChunkDef::MakeIndexNoCheck(a_RelX, a_RelY - (Section * SectionHeight), a_RelZ);
-			return (m_Sections[Section]->m_BlockMetas[Index / 2] >> ((Index & 1) * 4)) & 0x0f;
+			return (m_Sections[Idxs.Section]->m_BlockMetas[Idxs.Index / 2] >> ((Idxs.Index & 1) * 4)) & 0x0f;
 		}
 		else
 		{
 			return 0;
 		}
 	}
-	ASSERT(!"cChunkData::GetMeta(): coords out of chunk range!");
+	// Coordinates are outside outside the world, so it must be an air block with a blank meta
 	return 0;
 }
 
@@ -230,38 +206,33 @@ NIBBLETYPE cChunkData::GetMeta(int a_RelX, int a_RelY, int a_RelZ) const
 
 
 
-bool cChunkData::SetMeta(int a_RelX, int a_RelY, int a_RelZ, NIBBLETYPE a_Nibble)
+bool cChunkData::SetMeta(Vector3i a_RelPos, NIBBLETYPE a_Nibble)
 {
-	if (
-		(a_RelX >= cChunkDef::Width)  || (a_RelX < 0) ||
-		(a_RelY >= cChunkDef::Height) || (a_RelY < 0) ||
-		(a_RelZ >= cChunkDef::Width)  || (a_RelZ < 0)
-	)
+	if (!cChunkDef::IsValidRelPos(a_RelPos))
 	{
 		ASSERT(!"cChunkData::SetMeta(): index out of range!");
 		return false;
 	}
 
-	int Section = a_RelY / SectionHeight;
-	if (m_Sections[Section] == nullptr)
+	auto Idxs = IndicesFromRelPos(a_RelPos);
+	if (m_Sections[Idxs.Section] == nullptr)
 	{
 		if ((a_Nibble & 0xf) == 0x00)
 		{
 			return false;
 		}
-		m_Sections[Section] = Allocate();
-		if (m_Sections[Section] == nullptr)
+		m_Sections[Idxs.Section] = Allocate();
+		if (m_Sections[Idxs.Section] == nullptr)
 		{
 			ASSERT(!"Failed to allocate a new section in Chunkbuffer");
 			return false;
 		}
-		ZeroSection(m_Sections[Section]);
+		ZeroSection(m_Sections[Idxs.Section]);
 	}
-	int Index = cChunkDef::MakeIndexNoCheck(a_RelX, a_RelY - (Section * SectionHeight), a_RelZ);
-	NIBBLETYPE oldval = m_Sections[Section]->m_BlockMetas[Index / 2] >> ((Index & 1) * 4) & 0xf;
-	m_Sections[Section]->m_BlockMetas[Index / 2] = static_cast<NIBBLETYPE>(
-		(m_Sections[Section]->m_BlockMetas[Index / 2] & (0xf0 >> ((Index & 1) * 4))) |  // The untouched nibble
-		((a_Nibble & 0x0f) << ((Index & 1) * 4))  // The nibble being set
+	NIBBLETYPE oldval = m_Sections[Idxs.Section]->m_BlockMetas[Idxs.Index / 2] >> ((Idxs.Index & 1) * 4) & 0xf;
+	m_Sections[Idxs.Section]->m_BlockMetas[Idxs.Index / 2] = static_cast<NIBBLETYPE>(
+		(m_Sections[Idxs.Section]->m_BlockMetas[Idxs.Index / 2] & (0xf0 >> ((Idxs.Index & 1) * 4))) |  // The untouched nibble
+		((a_Nibble & 0x0f) << ((Idxs.Index & 1) * 4))  // The nibble being set
 	);
 	return oldval != a_Nibble;
 }
@@ -270,19 +241,14 @@ bool cChunkData::SetMeta(int a_RelX, int a_RelY, int a_RelZ, NIBBLETYPE a_Nibble
 
 
 
-NIBBLETYPE cChunkData::GetBlockLight(int a_RelX, int a_RelY, int a_RelZ) const
+NIBBLETYPE cChunkData::GetBlockLight(Vector3i a_RelPos) const
 {
-	if (
-		(a_RelX < cChunkDef::Width) && (a_RelX > -1) &&
-		(a_RelY < cChunkDef::Height) && (a_RelY > -1) &&
-		(a_RelZ < cChunkDef::Width) && (a_RelZ > -1)
-	)
+	if (cChunkDef::IsValidRelPos(a_RelPos))
 	{
-		int Section = a_RelY / SectionHeight;
-		if (m_Sections[Section] != nullptr)
+		auto Idxs = IndicesFromRelPos(a_RelPos);
+		if (m_Sections[Idxs.Section] != nullptr)
 		{
-			int Index = cChunkDef::MakeIndexNoCheck(a_RelX, a_RelY - (Section * SectionHeight), a_RelZ);
-			return (m_Sections[Section]->m_BlockLight[Index / 2] >> ((Index & 1) * 4)) & 0x0f;
+			return (m_Sections[Idxs.Section]->m_BlockLight[Idxs.Index / 2] >> ((Idxs.Index & 1) * 4)) & 0x0f;
 		}
 		else
 		{
@@ -297,15 +263,14 @@ NIBBLETYPE cChunkData::GetBlockLight(int a_RelX, int a_RelY, int a_RelZ) const
 
 
 
-NIBBLETYPE cChunkData::GetSkyLight(int a_RelX, int a_RelY, int a_RelZ) const
+NIBBLETYPE cChunkData::GetSkyLight(Vector3i a_RelPos) const
 {
-	if ((a_RelX < cChunkDef::Width) && (a_RelX > -1) && (a_RelY < cChunkDef::Height) && (a_RelY > -1) && (a_RelZ < cChunkDef::Width) && (a_RelZ > -1))
+	if (cChunkDef::IsValidRelPos(a_RelPos))
 	{
-		int Section = a_RelY / SectionHeight;
-		if (m_Sections[Section] != nullptr)
+		auto Idxs = IndicesFromRelPos(a_RelPos);
+		if (m_Sections[Idxs.Section] != nullptr)
 		{
-			int Index = cChunkDef::MakeIndexNoCheck(a_RelX, a_RelY - (Section * SectionHeight), a_RelZ);
-			return (m_Sections[Section]->m_BlockSkyLight[Index / 2] >> ((Index & 1) * 4)) & 0x0f;
+			return (m_Sections[Idxs.Section]->m_BlockSkyLight[Idxs.Index / 2] >> ((Idxs.Index & 1) * 4)) & 0x0f;
 		}
 		else
 		{
@@ -320,18 +285,45 @@ NIBBLETYPE cChunkData::GetSkyLight(int a_RelX, int a_RelY, int a_RelZ) const
 
 
 
-cChunkData cChunkData::Copy(void) const
+const cChunkData::sChunkSection * cChunkData::GetSection(size_t a_SectionNum) const
 {
-	cChunkData copy(m_Pool);
-	for (size_t i = 0; i < NumSections; i++)
+	if (a_SectionNum < NumSections)
+	{
+		return m_Sections[a_SectionNum];
+	}
+	ASSERT(!"cChunkData::GetSection: section index out of range");
+	return nullptr;
+}
+
+
+
+
+
+UInt16 cChunkData::GetSectionBitmask() const
+{
+	static_assert(NumSections <= 16U, "cChunkData::GetSectionBitmask needs a bigger data type");
+	UInt16 Res = 0U;
+	for (size_t i = 0U; i < NumSections; ++i)
+	{
+		Res |= ((m_Sections[i] != nullptr) << i);
+	}
+	return Res;
+}
+
+
+
+
+
+void cChunkData::Clear()
+{
+	for (size_t i = 0; i < NumSections; ++i)
 	{
 		if (m_Sections[i] != nullptr)
 		{
-			copy.m_Sections[i] = copy.Allocate();
-			*copy.m_Sections[i] = *m_Sections[i];
+			Free(m_Sections[i]);
+			m_Sections[i] = nullptr;
 		}
 	}
-	return copy;
 }
 
 
@@ -341,7 +333,7 @@ cChunkData cChunkData::Copy(void) const
 void cChunkData::CopyBlockTypes(BLOCKTYPE * a_Dest, size_t a_Idx, size_t a_Length) const
 {
 	size_t ToSkip = a_Idx;
-	
+
 	for (size_t i = 0; i < NumSections; i++)
 	{
 		size_t StartPos = 0;
@@ -428,10 +420,133 @@ void cChunkData::CopySkyLight(NIBBLETYPE * a_Dest) const
 
 
 
+void cChunkData::FillBlockTypes(BLOCKTYPE a_Value)
+{
+	// If needed, allocate any missing sections
+	if (a_Value != 0x00)
+	{
+		for (auto & Section : m_Sections)
+		{
+			if (Section == nullptr)
+			{
+				Section = Allocate();
+				std::fill(std::begin(Section->m_BlockMetas),    std::end(Section->m_BlockMetas),    0x00);
+				std::fill(std::begin(Section->m_BlockLight),    std::end(Section->m_BlockLight),    0x00);
+				std::fill(std::begin(Section->m_BlockSkyLight), std::end(Section->m_BlockSkyLight), 0xff);
+			}
+		}
+	}
+
+	for (auto Section : m_Sections)
+	{
+		if (Section != nullptr)
+		{
+			std::fill(std::begin(Section->m_BlockTypes), std::end(Section->m_BlockTypes), a_Value);
+		}
+	}
+}
+
+
+
+
+
+void cChunkData::FillMetas(NIBBLETYPE a_Value)
+{
+	// If needed, allocate any missing sections
+	if (a_Value != 0x00)
+	{
+		for (auto & Section : m_Sections)
+		{
+			if (Section == nullptr)
+			{
+				Section = Allocate();
+				std::fill(std::begin(Section->m_BlockTypes),    std::end(Section->m_BlockTypes),    0x00);
+				std::fill(std::begin(Section->m_BlockLight),    std::end(Section->m_BlockLight),    0x00);
+				std::fill(std::begin(Section->m_BlockSkyLight), std::end(Section->m_BlockSkyLight), 0xff);
+			}
+		}
+	}
+
+	NIBBLETYPE NewMeta = static_cast<NIBBLETYPE>((a_Value << 4) | a_Value);
+	for (auto Section : m_Sections)
+	{
+		if (Section != nullptr)
+		{
+			std::fill(std::begin(Section->m_BlockMetas), std::end(Section->m_BlockMetas), NewMeta);
+		}
+	}
+}
+
+
+
+
+
+void cChunkData::FillBlockLight(NIBBLETYPE a_Value)
+{
+	// If needed, allocate any missing sections
+	if (a_Value != 0x00)
+	{
+		for (auto & Section : m_Sections)
+		{
+			if (Section == nullptr)
+			{
+				Section = Allocate();
+				std::fill(std::begin(Section->m_BlockTypes), std::end(Section->m_BlockTypes), 0x00);
+				std::fill(std::begin(Section->m_BlockMetas), std::end(Section->m_BlockMetas), 0x00);
+				std::fill(std::begin(Section->m_BlockSkyLight), std::end(Section->m_BlockSkyLight), 0xff);
+			}
+		}
+	}
+
+	NIBBLETYPE NewLight = static_cast<NIBBLETYPE>((a_Value << 4) | a_Value);
+	for (auto Section : m_Sections)
+	{
+		if (Section != nullptr)
+		{
+			std::fill(std::begin(Section->m_BlockLight), std::end(Section->m_BlockLight), NewLight);
+		}
+	}
+}
+
+
+
+
+
+void cChunkData::FillSkyLight(NIBBLETYPE a_Value)
+{
+	// If needed, allocate any missing sections
+	if (a_Value != 0x0f)
+	{
+		for (auto & Section : m_Sections)
+		{
+			if (Section == nullptr)
+			{
+				Section = Allocate();
+				std::fill(std::begin(Section->m_BlockTypes), std::end(Section->m_BlockTypes), 0x00);
+				std::fill(std::begin(Section->m_BlockMetas), std::end(Section->m_BlockMetas), 0x00);
+				std::fill(std::begin(Section->m_BlockLight), std::end(Section->m_BlockLight), 0x00);
+			}
+		}
+	}
+
+	NIBBLETYPE NewSkyLight = static_cast<NIBBLETYPE>((a_Value << 4) | a_Value);
+	for (auto Section : m_Sections)
+	{
+		if (Section != nullptr)
+		{
+			std::fill(std::begin(Section->m_BlockSkyLight), std::end(Section->m_BlockSkyLight), NewSkyLight);
+		}
+	}
+}
+
+
+
+
+
 void cChunkData::SetBlockTypes(const BLOCKTYPE * a_Src)
 {
 	ASSERT(a_Src != nullptr);
-	
+
 	for (size_t i = 0; i < NumSections; i++)
 	{
 		// If the section is already allocated, copy the data into it:
@@ -442,12 +557,12 @@ void cChunkData::SetBlockTypes(const BLOCKTYPE * a_Src)
 		}
 
 		// The section doesn't exist, find out if it is needed:
-		if (IsAllValue(a_Src + i * SectionBlockCount, SectionBlockCount, (const BLOCKTYPE)0))
+		if (IsAllValue(a_Src + i * SectionBlockCount, SectionBlockCount, static_cast<BLOCKTYPE>(0)))
 		{
 			// No need for the section, the data is all-air
 			continue;
 		}
-		
+
 		// Allocate the section and copy the data into it:
 		m_Sections[i] = Allocate();
 		memcpy(m_Sections[i]->m_BlockTypes, &a_Src[i * SectionBlockCount], sizeof(m_Sections[i]->m_BlockTypes));
@@ -460,10 +575,11 @@ void cChunkData::SetBlockTypes(const BLOCKTYPE * a_Src)
 
 
 
+
 void cChunkData::SetMetas(const NIBBLETYPE * a_Src)
 {
 	ASSERT(a_Src != nullptr);
-	
+
 	for (size_t i = 0; i < NumSections; i++)
 	{
 		// If the section is already allocated, copy the data into it:
@@ -472,14 +588,14 @@ void cChunkData::SetMetas(const NIBBLETYPE * a_Src)
 			memcpy(m_Sections[i]->m_BlockMetas, &a_Src[i * SectionBlockCount / 2], sizeof(m_Sections[i]->m_BlockMetas));
 			continue;
 		}
-		
+
 		// The section doesn't exist, find out if it is needed:
-		if (IsAllValue(a_Src + i * SectionBlockCount / 2, SectionBlockCount / 2, (NIBBLETYPE)0))
+		if (IsAllValue(a_Src + i * SectionBlockCount / 2, SectionBlockCount / 2, static_cast<NIBBLETYPE>(0)))
 		{
 			// No need for the section, the data is all zeroes
 			continue;
 		}
-		
+
 		// Allocate the section and copy the data into it:
 		m_Sections[i] = Allocate();
 		memcpy(m_Sections[i]->m_BlockMetas, &a_Src[i * SectionBlockCount / 2], sizeof(m_Sections[i]->m_BlockMetas));
@@ -499,7 +615,7 @@ void cChunkData::SetBlockLight(const NIBBLETYPE * a_Src)
 	{
 		return;
 	}
-	
+
 	for (size_t i = 0; i < NumSections; i++)
 	{
 		// If the section is already allocated, copy the data into it:
@@ -508,14 +624,14 @@ void cChunkData::SetBlockLight(const NIBBLETYPE * a_Src)
 			memcpy(m_Sections[i]->m_BlockLight, &a_Src[i * SectionBlockCount / 2], sizeof(m_Sections[i]->m_BlockLight));
 			continue;
 		}
-		
+
 		// The section doesn't exist, find out if it is needed:
-		if (IsAllValue(a_Src + i * SectionBlockCount / 2, SectionBlockCount / 2, (NIBBLETYPE)0))
+		if (IsAllValue(a_Src + i * SectionBlockCount / 2, SectionBlockCount / 2, static_cast<NIBBLETYPE>(0)))
 		{
 			// No need for the section, the data is all zeroes
 			continue;
 		}
-		
+
 		// Allocate the section and copy the data into it:
 		m_Sections[i] = Allocate();
 		memcpy(m_Sections[i]->m_BlockLight, &a_Src[i * SectionBlockCount / 2], sizeof(m_Sections[i]->m_BlockLight));
@@ -528,13 +644,14 @@ void cChunkData::SetBlockLight(const NIBBLETYPE * a_Src)
 
 
 
+
 void cChunkData::SetSkyLight(const NIBBLETYPE * a_Src)
 {
 	if (a_Src == nullptr)
 	{
 		return;
 	}
-	
+
 	for (size_t i = 0; i < NumSections; i++)
 	{
 		// If the section is already allocated, copy the data into it:
@@ -545,12 +662,12 @@ void cChunkData::SetSkyLight(const NIBBLETYPE * a_Src)
 		}
 
 		// The section doesn't exist, find out if it is needed:
-		if (IsAllValue(a_Src + i * SectionBlockCount / 2, SectionBlockCount / 2, (NIBBLETYPE)0xff))
+		if (IsAllValue(a_Src + i * SectionBlockCount / 2, SectionBlockCount / 2, static_cast<NIBBLETYPE>(0xff)))
 		{
 			// No need for the section, the data is all zeroes
 			continue;
 		}
-		
+
 		// Allocate the section and copy the data into it:
 		m_Sections[i] = Allocate();
 		memcpy(m_Sections[i]->m_BlockSkyLight, &a_Src[i * SectionBlockCount / 2], sizeof(m_Sections[i]->m_BlockSkyLight));
@@ -558,6 +675,23 @@ void cChunkData::SetSkyLight(const NIBBLETYPE * a_Src)
 		memset(m_Sections[i]->m_BlockMetas, 0x00, sizeof(m_Sections[i]->m_BlockMetas));
 		memset(m_Sections[i]->m_BlockLight, 0x00, sizeof(m_Sections[i]->m_BlockLight));
 	}  // for i - m_Sections[]
+}
+
+
+
+
+
+UInt32 cChunkData::NumPresentSections() const
+{
+	UInt32 Ret = 0U;
+	for (size_t i = 0; i < NumSections; i++)
+	{
+		if (m_Sections[i] != nullptr)
+		{
+			++Ret;
+		}
+	}
+	return Ret;
 }
 
 

@@ -1,13 +1,6 @@
 
-// ItemMap.h
-
-
-
-
-
 #pragma once
 
-#include "../Entities/Entity.h"
 #include "../Item.h"
 
 
@@ -20,7 +13,7 @@ class cItemMapHandler :
 	typedef cItemHandler super;
 
 	static const unsigned int DEFAULT_RADIUS = 128;
-	
+
 public:
 	cItemMapHandler() :
 		super(E_ITEM_MAP)
@@ -29,7 +22,7 @@ public:
 
 	virtual void OnUpdate(cWorld * a_World, cPlayer * a_Player, const cItem & a_Item)
 	{
-		cMap * Map = a_World->GetMapManager().GetMapData((unsigned)a_Item.m_ItemDamage);
+		cMap * Map = a_World->GetMapManager().GetMapData(static_cast<unsigned>(a_Item.m_ItemDamage));
 
 		if (Map == nullptr)
 		{
@@ -37,7 +30,6 @@ public:
 		}
 
 		Map->UpdateRadius(*a_Player, DEFAULT_RADIUS);
-
 		Map->UpdateClient(a_Player);
 	}
 } ;

@@ -23,11 +23,11 @@ class cStructGenMarbleCaves :
 {
 public:
 	cStructGenMarbleCaves(int a_Seed) : m_Seed(a_Seed) {}
-	
+
 protected:
 
 	int m_Seed;
-	
+
 	// cFinishGen override:
 	virtual void GenFinish(cChunkDesc & a_ChunkDesc) override;
 } ;
@@ -47,13 +47,13 @@ public:
 		m_Threshold(a_Threshold)
 	{
 	}
-	
+
 protected:
 	cNoise m_Noise1;
 	cNoise m_Noise2;
 	int    m_Seed;
 	float  m_Threshold;
-	
+
 	// cFinishGen override:
 	virtual void GenFinish(cChunkDesc & a_ChunkDesc) override;
 } ;
@@ -69,17 +69,15 @@ class cStructGenWormNestCaves :
 public:
 	cStructGenWormNestCaves(int a_Seed, int a_Size = 64, int a_Grid = 96, int a_MaxOffset = 128) :
 		super(a_Seed, a_Grid, a_Grid, a_MaxOffset, a_MaxOffset, a_Size, a_Size, 100),
-		m_Noise(a_Seed),
 		m_Size(a_Size),
 		m_MaxOffset(a_MaxOffset),
 		m_Grid(a_Grid)
 	{
 	}
-	
+
 protected:
 	class cCaveSystem;  // fwd: Caves.cpp
 
-	cNoise       m_Noise;
 	int          m_Size;  // relative size of the cave systems' caves. Average number of blocks of each initial tunnel
 	int          m_MaxOffset;  // maximum offset of the cave nest origin from the grid cell the nest belongs to
 	int          m_Grid;  // average spacing of the nests

@@ -4,16 +4,15 @@
 #include "Skeleton.h"
 #include "../World.h"
 #include "../Entities/ArrowEntity.h"
-#include "ClientHandle.h"
+#include "../ClientHandle.h"
 
 
 
 
 cSkeleton::cSkeleton(bool IsWither) :
-	super("Skeleton", mtSkeleton, "mob.skeleton.hurt", "mob.skeleton.death", 0.6, 1.8),
+	super("Skeleton", mtSkeleton, "entity.skeleton.hurt", "entity.skeleton.death", 0.6, 1.8),
 	m_bIsWither(IsWither)
 {
-	SetBurnsInDaylight(true);
 }
 
 
@@ -22,7 +21,7 @@ cSkeleton::cSkeleton(bool IsWither) :
 
 void cSkeleton::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 {
-	int LootingLevel = 0;
+	unsigned int LootingLevel = 0;
 	if (a_Killer != nullptr)
 	{
 		LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);
@@ -48,28 +47,27 @@ void cSkeleton::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 
 
 
-void cSkeleton::Attack(std::chrono::milliseconds a_Dt)
+bool cSkeleton::Attack(std::chrono::milliseconds a_Dt)
 {
-	m_AttackInterval += (static_cast<float>(a_Dt.count()) / 1000) * m_AttackRate;
-	if ((m_Target != nullptr) && (m_AttackInterval > 3.0))
+	StopMovingToPosition();  // Todo handle this in a better way, the skeleton does some uneeded recalcs due to inStateChasing
+	auto & Random = GetRandomProvider();
+	if ((GetTarget() != nullptr) && (m_AttackCoolDownTicksLeft == 0))
 	{
-		// Setting this higher gives us more wiggle room for attackrate
-		Vector3d Speed = GetLookVector() * 20;
-		Speed.y = Speed.y + 1;
-		cArrowEntity * Arrow = new cArrowEntity(this, GetPosX(), GetPosY() + 1, GetPosZ(), Speed);
-		if (Arrow == nullptr)
+		Vector3d Inaccuracy = Vector3d(Random.RandReal<double>(-0.25, 0.25), Random.RandReal<double>(-0.25, 0.25), Random.RandReal<double>(-0.25, 0.25));
+		Vector3d Speed = (GetTarget()->GetPosition() + Inaccuracy - GetPosition()) * 5;
+		Speed.y += Random.RandInt(-1, 1);
+
+		auto Arrow = cpp14::make_unique<cArrowEntity>(this, GetPosition().addedY(1), Speed);
+		auto ArrowPtr = Arrow.get();
+		if (!ArrowPtr->Initialize(std::move(Arrow), *m_World))
 		{
-			return;
+			return false;
 		}
-		if (!Arrow->Initialize(*m_World))
-		{
-			delete Arrow;
-			Arrow = nullptr;
-			return;
-		}
-		m_World->BroadcastSpawnEntity(*Arrow);
-		m_AttackInterval = 0.0;
+
+		ResetAttackCooldown();
+		return true;
 	}
+	return false;
 }
 
 

@@ -3,7 +3,6 @@
 // Implements the helper functions for converting Block ID string to int etc.
 
 #include "Globals.h"
-#include "BlockID.h"
 #include "IniFile.h"
 #include "Item.h"
 #include "Mobs/Monster.h"
@@ -22,9 +21,9 @@ class cBlockIDMap
 			return (NoCaseCompare(a_Item1, a_Item2) > 0);
 		}
 	} ;
-	
+
 	typedef std::map<AString, std::pair<short, short>, Comparator> ItemMap;
-	
+
 public:
 	static bool m_bHasRunInit;
 
@@ -60,8 +59,8 @@ public:
 			AddToMap(Name, Value);
 		}  // for i - Ini.Values[]
 	}
-	
-	
+
+
 	int Resolve(const AString & a_ItemName)
 	{
 		ItemMap::iterator itr = m_Map.find(a_ItemName);
@@ -71,8 +70,8 @@ public:
 		}
 		return itr->second.first;
 	}
-	
-	
+
+
 	bool ResolveItem(const AString & a_ItemName, cItem & a_Item)
 	{
 		// Split into parts divided by either ':' or '^'
@@ -96,14 +95,13 @@ public:
 		else
 		{
 			// Not a resolvable string, try pure numbers: "45:6", "45^6" etc.
-			a_Item.m_ItemType = (short)atoi(Split[0].c_str());
-			if ((a_Item.m_ItemType == 0) && (Split[0] != "0"))
+			if (!StringToInteger(Split[0], a_Item.m_ItemType))
 			{
 				// Parsing the number failed
 				return false;
 			}
 		}
-		
+
 		// Parse the damage, if present:
 		if (Split.size() < 2)
 		{
@@ -111,9 +109,8 @@ public:
 			a_Item.m_ItemCount = 1;
 			return true;
 		}
-		
-		a_Item.m_ItemDamage = (short)atoi(Split[1].c_str());
-		if ((a_Item.m_ItemDamage == 0) && (Split[1] != "0"))
+
+		if (!StringToInteger(Split[1], a_Item.m_ItemDamage))
 		{
 			// Parsing the number failed
 			return false;
@@ -121,8 +118,8 @@ public:
 		a_Item.m_ItemCount = 1;
 		return true;
 	}
-	
-	
+
+
 	AString Desolve(short a_ItemType, short a_ItemDamage)
 	{
 		// First try an exact match, both ItemType and ItemDamage ("birchplanks=5:2"):
@@ -133,7 +130,7 @@ public:
 				return itr->first;
 			}
 		}  // for itr - m_Map[]
-		
+
 		// There is no exact match, try matching ItemType only ("planks=5"):
 		if (a_ItemDamage == 0)
 		{
@@ -158,12 +155,12 @@ public:
 		}
 		return res;
 	}
-	
-	
+
+
 protected:
 	ItemMap m_Map;
-	
-	
+
+
 	void AddToMap(const AString & a_Name, const AString & a_Value)
 	{
 		AStringVector Split = StringSplit(a_Value, ":");
@@ -175,8 +172,16 @@ protected:
 		{
 			return;
 		}
-		short ItemType = (short)atoi(Split[0].c_str());
-		short ItemDamage = (Split.size() > 1) ? (short)atoi(Split[1].c_str()) : -1;
+		short ItemType;
+		if (!StringToInteger(Split[0], ItemType))
+		{
+			ASSERT(!"Invalid item type");
+		}
+		short ItemDamage = -1;
+		if (Split.size() > 1 && !StringToInteger(Split[1], ItemDamage))
+		{
+			ASSERT(!"Invalid item damage");
+		}
 		m_Map[a_Name] = std::make_pair(ItemType, ItemDamage);
 	}
 } ;
@@ -218,13 +223,14 @@ int BlockStringToType(const AString & a_BlockTypeString)
 		// It was a valid number, return that
 		return res;
 	}
-	
+
 	if (!gsBlockIDMap.m_bHasRunInit)
 	{
 		gsBlockIDMap.init();
 	}
 	return gsBlockIDMap.Resolve(TrimString(a_BlockTypeString));
 }
+
 
 
 
@@ -288,13 +294,13 @@ AString ItemToFullString(const cItem & a_Item)
 eDimension StringToDimension(const AString & a_DimensionString)
 {
 	// First try decoding as a number
-	int res = atoi(a_DimensionString.c_str());
-	if ((res != 0) || (a_DimensionString == "0"))
+	int res;
+	if (StringToInteger(a_DimensionString, res))
 	{
 		// It was a valid number
-		return (eDimension)res;
+		return static_cast<eDimension>(res);
 	}
-	
+
 	// Decode using a built-in map:
 	static struct
 	{
@@ -317,7 +323,7 @@ eDimension StringToDimension(const AString & a_DimensionString)
 			return DimensionMap[i].m_Dimension;
 		}
 	}  // for i - DimensionMap[]
-	
+
 	// Not found
 	LOGWARNING("Unknown dimension: \"%s\". Setting to Overworld", a_DimensionString.c_str());
 	return dimOverworld;
@@ -350,7 +356,7 @@ AString DimensionToString(eDimension a_Dimension)
 	}  // for i - DimensionMap[]
 
 	// Not found
-	LOGWARNING("Unknown dimension: \"%i\". Setting to Overworld", (int)a_Dimension);
+	LOGWARNING("Unknown dimension: \"%i\". Setting to Overworld", static_cast<int>(a_Dimension));
 	return "Overworld";
 }
 
@@ -358,7 +364,7 @@ AString DimensionToString(eDimension a_Dimension)
 
 
 
-/// Translates damage type constant to a string representation (built-in).
+/** Translates damage type constant to a string representation (built-in) */
 AString DamageTypeToString(eDamageType a_DamageType)
 {
 	// Make sure to keep this alpha-sorted.
@@ -383,27 +389,25 @@ AString DamageTypeToString(eDamageType a_DamageType)
 		case dtSuffocating:     return "dtSuffocation";
 		case dtExplosion:       return "dtExplosion";
 	}
-	
-	// Unknown damage type:
-	ASSERT(!"Unknown DamageType");
-	return Printf("dtUnknown_%d", (int)a_DamageType);
+	UNREACHABLE("Unsupported damage type");
 }
 
 
 
 
 
-/// Translates a damage type string to damage type. Takes either a number or a damage type alias (built-in). Returns -1 on failure
+/** Translates a damage type string to damage type. Takes either a number or a damage type alias (built-in).
+Returns -1 on failure. */
 eDamageType StringToDamageType(const AString & a_DamageTypeString)
 {
 	// First try decoding as a number:
-	int res = atoi(a_DamageTypeString.c_str());
-	if ((res != 0) || (a_DamageTypeString == "0"))
+	int res;
+	if (!StringToInteger(a_DamageTypeString, res))
 	{
 		// It was a valid number
-		return (eDamageType)res;
+		return static_cast<eDamageType>(res);
 	}
-	
+
 	// Decode using a built-in map:
 	static struct
 	{
@@ -460,9 +464,9 @@ eDamageType StringToDamageType(const AString & a_DamageTypeString)
 			return DamageTypeMap[i].m_DamageType;
 		}
 	}  // for i - DamageTypeMap[]
-	
+
 	// Not found:
-	return (eDamageType)-1;
+	return static_cast<eDamageType>(-1);
 }
 
 

@@ -3,11 +3,9 @@
 
 // Declares the cSetChunkData class used for sending loaded / generated chunk data into cWorld
 
-
-
-
-
 #pragma once
+
+#include "ChunkData.h"
 
 
 
@@ -24,7 +22,7 @@ public:
 
 	/** Constructs a new instance based on data existing elsewhere, will copy all the memory. Prefer to use the
 	other constructor as much as possible.
-	Will move the entity and blockentity lists into the internal storage, and invalidate a_Entities and
+	Will move the entity list and blockentities into the internal storage, and invalidate a_Entities and
 	a_BlockEntities.
 	When passing an lvalue, a_Entities and a_BlockEntities must be explicitly converted to an rvalue beforehand
 	with std::move().
@@ -44,53 +42,44 @@ public:
 		const cChunkDef::HeightMap * a_HeightMap,
 		const cChunkDef::BiomeMap * a_Biomes,
 		cEntityList && a_Entities,
-		cBlockEntityList && a_BlockEntities,
+		cBlockEntities && a_BlockEntities,
 		bool a_ShouldMarkDirty
 	);
-	
+
 	int GetChunkX(void) const { return m_ChunkX; }
 	int GetChunkZ(void) const { return m_ChunkZ; }
-	
-	/** Returns the internal storage of the block types, read-only. */
-	const cChunkDef::BlockTypes & GetBlockTypes(void) const { return m_BlockTypes; }
-	
-	/** Returns the internal storage of the block types, read-only. */
-	const cChunkDef::BlockNibbles & GetBlockMetas(void) const { return m_BlockMetas; }
-	
-	/** Returns the internal storage of the block light, read-only. */
-	const cChunkDef::BlockNibbles & GetBlockLight(void) const { return m_BlockLight; }
-	
-	/** Returns the internal storage of the block types, read-only. */
-	const cChunkDef::BlockNibbles & GetSkyLight(void) const { return m_SkyLight; }
-	
+
+	/** Returns the internal storage of block types, metas and lighting. */
+	cChunkData & GetChunkData(void) { return m_ChunkData; }
+
 	/** Returns the internal storage for heightmap, read-only. */
 	const cChunkDef::HeightMap & GetHeightMap(void) const { return m_HeightMap; }
-	
+
 	/** Returns the internal storage for biomes, read-write. */
 	cChunkDef::BiomeMap & GetBiomes(void) { return m_Biomes; }
-	
+
 	/** Returns the internal storage for entities, read-write. */
 	cEntityList & GetEntities(void) { return m_Entities; }
-	
+
 	/** Returns the internal storage for block entities, read-write. */
-	cBlockEntityList & GetBlockEntities(void) { return m_BlockEntities; }
-	
+	cBlockEntities & GetBlockEntities(void) { return m_BlockEntities; }
+
 	/** Returns whether both light arrays stored in this object are valid. */
 	bool IsLightValid(void) const { return m_IsLightValid; }
-	
+
 	/** Returns whether the heightmap stored in this object is valid. */
 	bool IsHeightMapValid(void) const { return m_IsHeightMapValid; }
 
 	/** Returns whether the biomes stored in this object are valid. */
 	bool AreBiomesValid(void) const { return m_AreBiomesValid; }
-	
+
 	/** Returns whether the chunk should be marked as dirty after its data is set.
 	Used by the generator to save chunks after generating. */
 	bool ShouldMarkDirty(void) const { return m_ShouldMarkDirty; }
-	
+
 	/** Marks the biomes stored in this object as valid. */
 	void MarkBiomesValid(void) { m_AreBiomesValid = true; }
-	
+
 	/** Calculates the heightmap based on the contained blocktypes and marks it valid. */
 	void CalculateHeightMap(void);
 
@@ -100,26 +89,16 @@ public:
 protected:
 	int m_ChunkX;
 	int m_ChunkZ;
-	
-	cChunkDef::BlockTypes m_BlockTypes;
-	cChunkDef::BlockNibbles m_BlockMetas;
-	cChunkDef::BlockNibbles m_BlockLight;
-	cChunkDef::BlockNibbles m_SkyLight;
+
+	cListAllocationPool<cChunkData::sChunkSection> m_Pool;
+	cChunkData m_ChunkData;
 	cChunkDef::HeightMap m_HeightMap;
 	cChunkDef::BiomeMap m_Biomes;
 	cEntityList m_Entities;
-	cBlockEntityList m_BlockEntities;
-	
+	cBlockEntities m_BlockEntities;
+
 	bool m_IsLightValid;
 	bool m_IsHeightMapValid;
 	bool m_AreBiomesValid;
 	bool m_ShouldMarkDirty;
 };
-
-typedef SharedPtr<cSetChunkData> cSetChunkDataPtr;  // TODO: Change to unique_ptr once we go C++11
-typedef std::vector<cSetChunkDataPtr> cSetChunkDataPtrs;
-
-
-
-
-

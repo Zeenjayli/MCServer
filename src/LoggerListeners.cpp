@@ -6,22 +6,18 @@
 #if defined(_WIN32)
 	#include <io.h>  // Needed for _isatty(), not available on Linux
 	#include <time.h>
-#elif defined(__linux) && !defined(ANDROID_NDK)
-	#include <unistd.h>  // Needed for isatty() on Linux
-#elif defined(ANDROID_NDK)
-	#include <android/log.h>
 #endif
 
 
-#if defined(_WIN32) || (defined (__linux) && !defined(ANDROID_NDK))
+#if defined(_WIN32) || defined (__linux) || defined (__APPLE__)
 	class cColouredConsoleListener
 		: public cLogger::cListener
 	{
 	protected:
-	
+
 		virtual void SetLogColour(cLogger::eLogLevel a_LogLevel) = 0;
 		virtual void SetDefaultLogColour() = 0;
-	
+
 		virtual void Log(AString a_Message, cLogger::eLogLevel a_LogLevel) override
 		{
 			SetLogColour(a_LogLevel);
@@ -46,7 +42,7 @@
 			m_DefaultConsoleAttrib(a_DefaultConsoleAttrib)
 		{
 		}
-		
+
 		#ifdef _DEBUG
 			virtual void Log(AString a_Message, cLogger::eLogLevel a_LogLevel) override
 			{
@@ -90,26 +86,26 @@
 			}
 			SetConsoleTextAttribute(m_Console, Attrib);
 		}
-		
-		
+
+
 		virtual void SetDefaultLogColour() override
 		{
 			SetConsoleTextAttribute(m_Console, m_DefaultConsoleAttrib);
 		}
-		
+
 	private:
-	
+
 		HANDLE m_Console;
 		WORD m_DefaultConsoleAttrib;
 	};
-	
-	
-	
-#elif defined (__linux) && !defined(ANDROID_NDK)
 
 
 
-	class cLinuxConsoleListener
+#elif defined (__linux) || defined (__APPLE__)
+
+
+
+	class cANSIConsoleListener
 		: public cColouredConsoleListener
 	{
 	public:
@@ -143,55 +139,16 @@
 				}
 			}
 		}
-		
-		
+
+
 		virtual void SetDefaultLogColour() override
 		{
 			// Whatever the console default is
 			printf("\x1b[0m");
+			fflush(stdout);
 		}
 	};
-	
-	
-	
-#elif defined(ANDROID_NDK)
 
-
-
-	class cAndroidConsoleListener
-		: public cLogger::cListener
-	{
-	public:
-		virtual void Log(AString a_Message, cLogger::eLogLevel a_LogLevel) override
-		{
-			android_LogPriority AndroidLogLevel;
-			switch (a_LogLevel)
-			{
-				case cLogger::llRegular:
-				{
-					AndroidLogLevel = ANDROID_LOG_VERBOSE;
-					break;
-				}
-				case cLogger::llInfo:
-				{
-					AndroidLogLevel = ANDROID_LOG_INFO;
-					break;
-				}
-				case cLogger::llWarning:
-				{
-					AndroidLogLevel = ANDROID_LOG_WARNING;
-					break;
-				}
-				case cLogger::llError:
-				{
-					AndroidLogLevel = ANDROID_LOG_ERROR;
-					break;
-				}
-			}
-			__android_log_print(AndroidLogLevel, "MCServer", "%s", a_Message.c_str());
-		}
-	};
-	
 #endif
 
 
@@ -236,8 +193,26 @@ public:
 
 
 
-cLogger::cListener * MakeConsoleListener(void)
+// Listener for when stdout is closed, i.e. When running as a daemon.
+class cNullConsoleListener
+	: public cLogger::cListener
 {
+	virtual void Log(AString a_Message, cLogger::eLogLevel a_LogLevel) override
+	{
+	}
+};
+
+
+
+
+
+std::unique_ptr<cLogger::cListener> MakeConsoleListener(bool a_IsService)
+{
+	if (a_IsService)
+	{
+		return cpp14::make_unique<cNullConsoleListener>();
+	}
+
 	#ifdef _WIN32
 		// See whether we are writing to a console the default console attrib:
 		bool ShouldColorOutput = (_isatty(_fileno(stdin)) != 0);
@@ -247,25 +222,24 @@ cLogger::cListener * MakeConsoleListener(void)
 			HANDLE Console = GetStdHandle(STD_OUTPUT_HANDLE);
 			GetConsoleScreenBufferInfo(Console, &sbi);
 			WORD DefaultConsoleAttrib = sbi.wAttributes;
-			return new cWindowsConsoleListener(Console, DefaultConsoleAttrib);
+			return cpp14::make_unique<cWindowsConsoleListener>(Console, DefaultConsoleAttrib);
 		}
 		else
 		{
-			return new cVanillaCPPConsoleListener;
+			return cpp14::make_unique<cVanillaCPPConsoleListener>();
 		}
-		
-	#elif defined (__linux) && !defined(ANDROID_NDK)
+	#elif (defined (__linux) && !defined(ANDROID)) || defined (__APPLE__)
 		// TODO: lookup terminal in terminfo
 		if (isatty(fileno(stdout)))
 		{
-			return new cLinuxConsoleListener();
+			return cpp14::make_unique<cANSIConsoleListener>();
 		}
 		else
 		{
-			return new cVanillaCPPConsoleListener();
+			return cpp14::make_unique<cVanillaCPPConsoleListener>();
 		}
 	#else
-		return new cVanillaCPPConsoleListener();
+		return cpp14::make_unique<cVanillaCPPConsoleListener>();
 	#endif
 }
 
@@ -276,47 +250,82 @@ cLogger::cListener * MakeConsoleListener(void)
 ////////////////////////////////////////////////////////////////////////////////
 // cFileListener:
 
-cFileListener::cFileListener(void)
+class cFileListener
+	: public cLogger::cListener
 {
-	cFile::CreateFolder(FILE_IO_PREFIX + AString("logs"));
-	AString FileName;
-	FileName = Printf("%s%sLOG_%d.txt", FILE_IO_PREFIX, "logs/", (int)time(nullptr));
-	m_File.Open(FileName, cFile::fmAppend);
-}
+public:
 
+	cFileListener(void) {}
 
-
-
-
-void cFileListener::Log(AString a_Message, cLogger::eLogLevel a_LogLevel)
-{
-	const char * LogLevelPrefix = "Unkn ";
-	switch (a_LogLevel)
+	bool Open()
 	{
-		case cLogger::llRegular:
+		// Assume creation succeeds, as the API does not provide a way to tell if the folder exists.
+		cFile::CreateFolder(FILE_IO_PREFIX "logs");
+		bool success = m_File.Open(
+			FILE_IO_PREFIX + Printf(
+				"logs/LOG_%d.txt",
+				std::chrono::duration_cast<std::chrono::duration<int, std::ratio<1>>>(
+					std::chrono::system_clock::now().time_since_epoch()
+				).count()
+			),
+			cFile::fmAppend
+		);
+		return success;
+	}
+
+	virtual void Log(AString a_Message, cLogger::eLogLevel a_LogLevel) override
+	{
+		const char * LogLevelPrefix = "Unkn ";
+		bool ShouldFlush = false;
+		switch (a_LogLevel)
 		{
-			LogLevelPrefix = "     ";
-			break;
+			case cLogger::llRegular:
+			{
+				LogLevelPrefix = "     ";
+				break;
+			}
+			case cLogger::llInfo:
+			{
+				LogLevelPrefix = "Info ";
+				break;
+			}
+			case cLogger::llWarning:
+			{
+				LogLevelPrefix = "Warn ";
+				ShouldFlush = true;
+				break;
+			}
+			case cLogger::llError:
+			{
+				LogLevelPrefix = "Err  ";
+				ShouldFlush = true;
+				break;
+			}
 		}
-		case cLogger::llInfo:
+		m_File.Printf("%s%s", LogLevelPrefix, a_Message.c_str());
+		if (ShouldFlush)
 		{
-			LogLevelPrefix = "info ";
-			break;
-		}
-		case cLogger::llWarning:
-		{
-			LogLevelPrefix = "Warn ";
-			break;
-		}
-		case cLogger::llError:
-		{
-			LogLevelPrefix = "Err  ";
-			break;
+			m_File.Flush();
 		}
 	}
-	m_File.Printf("%s%s", LogLevelPrefix, a_Message.c_str());
+
+private:
+
+	cFile m_File;
+};
+
+
+
+
+
+std::pair<bool, std::unique_ptr<cLogger::cListener>> MakeFileListener()
+{
+	auto listener = cpp14::make_unique<cFileListener>();
+	if (!listener->Open())
+	{
+		return {false, nullptr};
+	}
+	return {true, std::move(listener)};
 }
-
-
 
 

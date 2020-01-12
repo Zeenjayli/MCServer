@@ -2,20 +2,12 @@
 #pragma once
 
 #include "../Entities/Pawn.h"
-#include "../Defines.h"
-#include "../BlockID.h"
-#include "../Item.h"
-#include "../Enchantments.h"
 #include "MonsterTypes.h"
+#include "PathFinder.h"
 
 
-
+class cItem;
 class cClientHandle;
-class cWorld;
-
-// Fwd: cPath
-enum class ePathFinderStatus;
-class cPath;
 
 
 
@@ -49,6 +41,12 @@ public:
 	*/
 	cMonster(const AString & a_ConfigName, eMonsterType a_MobType, const AString & a_SoundHurt, const AString & a_SoundDeath, double a_Width, double a_Height);
 
+	virtual ~cMonster() override;
+
+	virtual void Destroy(bool a_ShouldBroadcast = true) override;
+
+	virtual void Destroyed() override;
+
 	CLASS_PROTODEF(cMonster)
 
 	virtual void SpawnOn(cClientHandle & a_ClientHandle) override;
@@ -61,8 +59,9 @@ public:
 
 	virtual void OnRightClicked(cPlayer & a_Player) override;
 
-	/** Engage pathfinder and tell it to calculate a path to a given position, and move the mobile accordingly
-	Currently, the mob will only start moving to a new position after the position it is currently going to is reached. */
+	virtual void HandleFalling(void) override;
+
+	/** Engage pathfinder and tell it to calculate a path to a given position, and move the mob accordingly. */
 	virtual void MoveToPosition(const Vector3d & a_Position);  // tolua_export
 
 	// tolua_begin
@@ -70,10 +69,41 @@ public:
 	eFamily GetMobFamily(void) const;
 	// tolua_end
 
-	virtual void CheckEventSeePlayer(void);
-	virtual void EventSeePlayer(cEntity * a_Player);
+	virtual void CheckEventSeePlayer(cChunk & a_Chunk);
+	virtual void EventSeePlayer(cPlayer * a_Player, cChunk & a_Chunk);
 
-	/// Reads the monster configuration for the specified monster name and assigns it to this object.
+	// tolua_begin
+
+	/** Returns whether the mob can be leashed. */
+	bool CanBeLeashed() const { return m_CanBeLeashed; }
+
+	/** Sets whether the mob can be leashed, for extensibility in plugins */
+	void SetCanBeLeashed(bool a_CanBeLeashed) { m_CanBeLeashed = a_CanBeLeashed; }
+
+	/** Returns whether the monster is leashed to an entity. */
+	bool IsLeashed() const { return (m_LeashedTo != nullptr); }
+
+	/** Leash the monster to an entity. */
+	void LeashTo(cEntity & a_Entity, bool a_ShouldBroadcast = true);
+
+	/** Unleash the monster. Overload for the Unleash(bool, bool) function for plugins */
+	void Unleash(bool a_ShouldDropLeashPickup);
+
+	/** Returns the entity to where this mob is leashed, returns nullptr if it's not leashed */
+	cEntity * GetLeashedTo() const { return m_LeashedTo; }
+
+	// tolua_end
+
+	/** Unleash the monster. */
+	void Unleash(bool a_ShouldDropLeashPickup, bool a_ShouldBroadcast);
+
+	/** Sets entity position to where is leashed this mob */
+	void SetLeashToPos(Vector3d * pos) { m_LeashToPos = std::unique_ptr<Vector3d>(pos); }
+
+	/** Gets entity position to where mob should be leashed */
+	Vector3d * GetLeashToPos() const { return m_LeashToPos.get(); }
+
+	/** Reads the monster configuration for the specified monster name and assigns it to this object. */
 	void GetMonsterConfig(const AString & a_Name);
 
 	/** Returns whether this mob is undead (skeleton, zombie, etc.) */
@@ -82,9 +112,9 @@ public:
 	virtual void EventLosePlayer(void);
 	virtual void CheckEventLostPlayer(void);
 
-	virtual void InStateIdle    (std::chrono::milliseconds a_Dt);
-	virtual void InStateChasing (std::chrono::milliseconds a_Dt);
-	virtual void InStateEscaping(std::chrono::milliseconds a_Dt);
+	virtual void InStateIdle    (std::chrono::milliseconds a_Dt, cChunk & a_Chunk);
+	virtual void InStateChasing (std::chrono::milliseconds a_Dt, cChunk & a_Chunk);
+	virtual void InStateEscaping(std::chrono::milliseconds a_Dt, cChunk & a_Chunk);
 
 	int GetAttackRate() { return static_cast<int>(m_AttackRate); }
 	void SetAttackRate(float a_AttackRate) { m_AttackRate = a_AttackRate; }
@@ -104,17 +134,24 @@ public:
 	void SetDropChanceLeggings(float a_DropChanceLeggings) { m_DropChanceLeggings = a_DropChanceLeggings; }
 	void SetDropChanceBoots(float a_DropChanceBoots) { m_DropChanceBoots = a_DropChanceBoots; }
 	void SetCanPickUpLoot(bool a_CanPickUpLoot) { m_CanPickUpLoot = a_CanPickUpLoot; }
+	void ResetAttackCooldown();
 
-	/// Sets whether the mob burns in daylight. Only evaluated at next burn-decision tick
-	void SetBurnsInDaylight(bool a_BurnsInDaylight) { m_BurnsInDaylight = a_BurnsInDaylight; }
+	void SetBurnsInDaylight(bool a_BurnsInDaylight) { m_BurnsInDaylight = a_BurnsInDaylight; }  // tolua_export
+	bool BurnsInDaylight() const { return m_BurnsInDaylight; }  // tolua_export
 
 	double GetRelativeWalkSpeed(void) const { return m_RelativeWalkSpeed; }  // tolua_export
 	void SetRelativeWalkSpeed(double a_WalkSpeed) { m_RelativeWalkSpeed = a_WalkSpeed; }  // tolua_export
 
 	// Overridables to handle ageable mobs
-	virtual bool IsBaby    (void) const { return false; }
 	virtual bool IsTame    (void) const { return false; }
 	virtual bool IsSitting (void) const { return false; }
+
+	// tolua_begin
+	bool IsBaby (void) const { return m_Age < 0; }
+	int GetAge (void) const { return m_Age; }
+	void SetAge(int a_Age)  { m_Age = a_Age; }
+	// tolua_end
+
 
 	// tolua_begin
 
@@ -152,24 +189,35 @@ public:
 
 	// tolua_end
 
+	/**  Translates the MobType enum to the vanilla nbt name */
+	static AString MobTypeToVanillaNBT(eMonsterType a_MobType);
+
+	/** Sets the target that this mob will chase. Pass a nullptr to unset. */
+	void SetTarget (cPawn * a_NewTarget);
+
+	/** Unset the target without notifying the target entity. Do not use this, use SetTarget(nullptr) instead.
+	This is only used by cPawn internally. */
+	void UnsafeUnsetTarget();
+
+	/** Returns the current target. */
+	cPawn * GetTarget();
+
 	/** Creates a new object of the specified mob.
 	a_MobType is the type of the mob to be created
 	Asserts and returns null if mob type is not specified
 	*/
-	static cMonster * NewMonsterFromType(eMonsterType a_MobType);
+	static std::unique_ptr<cMonster> NewMonsterFromType(eMonsterType a_MobType);
+
+	/** Returns if this mob last target was a player to avoid destruction on player quit */
+	bool WasLastTargetAPlayer() const { return m_WasLastTargetAPlayer; }
 
 protected:
 
-	/** A pointer to the entity this mobile is aiming to reach */
-	cEntity * m_Target;
-	cPath *  m_Path;  // TODO unique ptr
+	/** The pathfinder instance handles pathfinding for this monster. */
+	cPathFinder m_PathFinder;
 
-	/** Stores if mobile is currently moving towards the ultimate, final destination */
-	bool m_IsFollowingPath;
-
-	/* If 0, will give up reaching the next m_NextWayPointPosition and will re-compute path. */
-	int m_GiveUpCounter;
-	int m_TicksSinceLastPathReset;
+	/** Stores if pathfinder is being used - set when final destination is set, and unset when stopped moving to final destination */
+	bool m_PathfinderActivated;
 
 	/** Coordinates of the next position that should be reached */
 	Vector3d m_NextWayPointPosition;
@@ -177,58 +225,37 @@ protected:
 	/** Coordinates for the ultimate, final destination. */
 	Vector3d m_FinalDestination;
 
-	/** Coordinates for the ultimate, final destination last given to the pathfinder. */
-	Vector3d m_PathFinderDestination;
-
 	/** Finds the lowest non-air block position (not the highest, as cWorld::GetHeight does)
 	If current Y is nonsolid, goes down to try to find a solid block, then returns that + 1
 	If current Y is solid, goes up to find first nonsolid block, and returns that.
 	If no suitable position is found, returns cChunkDef::Height. */
 	int FindFirstNonAirBlockPosition(double a_PosX, double a_PosZ);
 
-	/** Returns if the ultimate, final destination has been reached */
-	bool ReachedFinalDestination(void) { return ((m_FinalDestination - GetPosition()).SqrLength() < (m_AttackRange * m_AttackRange)); }
+	/** Returns if the ultimate, final destination has been reached. */
+	bool ReachedFinalDestination(void) { return ((m_FinalDestination - GetPosition()).SqrLength() < WAYPOINT_RADIUS * WAYPOINT_RADIUS); }
 
-	/** Returns if the intermediate waypoint of m_NextWayPointPosition has been reached */
-	bool ReachedNextWaypoint(void) { return ((m_NextWayPointPosition - GetPosition()).SqrLength() < 0.25); }
-
-	/** Returns if a monster can reach a given height by jumping */
-	inline bool DoesPosYRequireJump(int a_PosY)
+	/** Returns whether or not the target is close enough for attack. */
+	bool TargetIsInRange(void)
 	{
-		return ((a_PosY > POSY_TOINT) && (a_PosY == POSY_TOINT + 1));
+		ASSERT(GetTarget() != nullptr);
+		return ((GetTarget()->GetPosition() - GetPosition()).SqrLength() < (m_AttackRange * m_AttackRange));
 	}
 
-	/** Finds the next place to go by calculating a path and setting the m_NextWayPointPosition variable for the next block to head to
-	This is based on the ultimate, final destination and the current position, as well as the A* algorithm, and any environmental hazards
-	Returns if a path is ready, and therefore if the mob should move to m_NextWayPointPosition
-	*/
-	bool TickPathFinding(cChunk & a_Chunk);
+	/** Returns whether the monster needs to jump to reach a given height. */
+	inline bool DoesPosYRequireJump(double a_PosY)
+	{
+		return (a_PosY > GetPosY() + 0.8);  // Assume that differences up to 0.8 blocks can be walked instead of jumped
+	}
 
 	/** Move in a straight line to the next waypoint in the path, will jump if needed. */
 	void MoveToWayPoint(cChunk & a_Chunk);
 
-	/** Ensures the destination is not buried underground or under water. Also ensures the destination is not in the air.
-	Only the Y coordinate of m_FinalDestination might be changed.
-	1. If m_FinalDestination is the position of a water block, m_FinalDestination's Y will be modified to point to the heighest water block in the pool in the current column.
-	2. If m_FinalDestination is the position of a solid, m_FinalDestination's Y will be modified to point to the first airblock above the solid in the current column.
-	3. If m_FinalDestination is the position of an air block, Y will keep decreasing until hitting either a solid or water.
-	Now either 1 or 2 is performed. */
-	bool EnsureProperDestination(cChunk & a_Chunk);
-
-	/** Resets a pathfinding task, be it due to failure or something else
-	Resets the pathfinder. If m_IsFollowingPath is true, TickPathFinding starts a brand new path.
-	Should only be called by the pathfinder, cMonster::Tick or StopMovingToPosition. */
-	void ResetPathFinding(void);
-
-	/** Stops pathfinding
-	Calls ResetPathFinding and sets m_IsFollowingPath to false */
+	/** Stops pathfinding. Calls ResetPathFinding and sets m_IsFollowingPath to false */
 	void StopMovingToPosition();
 
-	/** Sets the body yaw and head yaw / pitch based on next / ultimate destinations */
-	void SetPitchAndYawFromDestination(void);
+	/** Sets the body yaw and head yaw */
+	void SetPitchAndYawFromDestination(bool a_IsFollowingPath);
 
-	virtual void HandleFalling(void);
-	int m_LastGroundHeight;
 	int m_JumpCoolDown;
 
 	std::chrono::milliseconds m_IdleInterval;
@@ -244,7 +271,7 @@ protected:
 	float m_AttackRate;
 	int m_AttackDamage;
 	int m_AttackRange;
-	float m_AttackInterval;
+	int m_AttackCoolDownTicksLeft;
 	int m_SightDistance;
 
 	float m_DropChanceWeapon;
@@ -260,20 +287,45 @@ protected:
 	bool m_BurnsInDaylight;
 	double m_RelativeWalkSpeed;
 
-	/** Adds a random number of a_Item between a_Min and a_Max to itemdrops a_Drops*/
+	int m_Age;
+	int m_AgingTimer;
+
+	bool m_WasLastTargetAPlayer;
+
+	/** Entity leashed to */
+	cEntity * m_LeashedTo;
+
+	/** Entity pos where this mob was leashed to. Used when deserializing the chunk in order to make the mob find the leash knot. */
+	std::unique_ptr<Vector3d> m_LeashToPos;
+
+	/** Mob has ben leashed or unleashed in current player action. Avoids double actions on horses. */
+	bool m_IsLeashActionJustDone;
+
+	/** Determines whether a monster can be leashed */
+	bool m_CanBeLeashed;
+
+	/** Adds a random number of a_Item between a_Min and a_Max to itemdrops a_Drops */
 	void AddRandomDropItem(cItems & a_Drops, unsigned int a_Min, unsigned int a_Max, short a_Item, short a_ItemHealth = 0);
 
-	/** Adds a item a_Item with the chance of a_Chance (in percent) to itemdrops a_Drops*/
+	/** Adds a item a_Item with the chance of a_Chance (in percent) to itemdrops a_Drops */
 	void AddRandomUncommonDropItem(cItems & a_Drops, float a_Chance, short a_Item, short a_ItemHealth = 0);
 
-	/** Adds one rare item out of the list of rare items a_Items modified by the looting level a_LootingLevel(I-III or custom) to the itemdrop a_Drops*/
-	void AddRandomRareDropItem(cItems & a_Drops, cItems & a_Items, short a_LootingLevel);
+	/** Adds one rare item out of the list of rare items a_Items modified by the looting level a_LootingLevel(I-III or custom) to the itemdrop a_Drops */
+	void AddRandomRareDropItem(cItems & a_Drops, cItems & a_Items, unsigned int a_LootingLevel);
 
-	/** Adds armor that is equipped with the chance saved in m_DropChance[...] (this will be greter than 1 if piccked up or 0.085 + (0.01 per LootingLevel) if born with) to the drop*/
-	void AddRandomArmorDropItem(cItems & a_Drops, short a_LootingLevel);
+	/** Adds armor that is equipped with the chance saved in m_DropChance[...] (this will be greter than 1 if picked up or 0.085 + (0.01 per LootingLevel) if born with) to the drop */
+	void AddRandomArmorDropItem(cItems & a_Drops, unsigned int a_LootingLevel);
 
-	/** Adds weapon that is equipped with the chance saved in m_DropChance[...] (this will be greter than 1 if piccked up or 0.085 + (0.01 per LootingLevel) if born with) to the drop*/
-	void AddRandomWeaponDropItem(cItems & a_Drops, short a_LootingLevel);
+	/** Adds weapon that is equipped with the chance saved in m_DropChance[...] (this will be greter than 1 if picked up or 0.085 + (0.01 per LootingLevel) if born with) to the drop */
+	void AddRandomWeaponDropItem(cItems & a_Drops, unsigned int a_LootingLevel);
 
+private:
+	/** A pointer to the entity this mobile is aiming to reach.
+	The validity of this pointer SHALL be guaranteed by the pointee;
+	it MUST be reset when the pointee changes worlds or is destroyed. */
+	cPawn * m_Target;
+
+	/** Leash calculations inside Tick function */
+	void CalcLeashActions(std::chrono::milliseconds a_Dt);
 
 } ;  // tolua_export

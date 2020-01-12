@@ -12,7 +12,7 @@
 
 
 cVillager::cVillager(eVillagerType VillagerType) :
-	super("Villager", mtVillager, "", "", 0.6, 1.8),
+	super("Villager", mtVillager, "entity.villager.hurt", "entity.villager.death", 0.6, 1.8),
 	m_ActionCountDown(-1),
 	m_Type(VillagerType),
 	m_VillagerAction(false)
@@ -32,7 +32,7 @@ bool cVillager::DoTakeDamage(TakeDamageInfo & a_TDI)
 
 	if ((a_TDI.Attacker != nullptr) && a_TDI.Attacker->IsPlayer())
 	{
-		if (m_World->GetTickRandomNumber(5) == 3)
+		if (GetRandomProvider().RandBool(1.0 / 6.0))
 		{
 			m_World->BroadcastEntityStatus(*this, esVillagerAngry);
 		}
@@ -41,7 +41,7 @@ bool cVillager::DoTakeDamage(TakeDamageInfo & a_TDI)
 	if (a_TDI.DamageType == dtLightning)
 	{
 		Destroy();
-		m_World->SpawnMob(GetPosX(), GetPosY(), GetPosZ(), mtWitch);
+		m_World->SpawnMob(GetPosX(), GetPosY(), GetPosZ(), mtWitch, false);
 		return true;
 	}
 	return true;
@@ -54,6 +54,11 @@ bool cVillager::DoTakeDamage(TakeDamageInfo & a_TDI)
 void cVillager::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
 	super::Tick(a_Dt, a_Chunk);
+	if (!IsTicking())
+	{
+		// The base class tick destroyed us
+		return;
+	}
 
 	if (m_ActionCountDown > -1)
 	{
@@ -85,7 +90,7 @@ void cVillager::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 	}
 
 	// Don't always try to do a special action. Each tick has 1% to do a special action.
-	if (m_World->GetTickRandomNumber(99) != 0)
+	if (GetRandomProvider().RandBool(0.99))
 	{
 		return;
 	}
@@ -103,7 +108,8 @@ void cVillager::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// Farmer functions.
+// Farmer functions:
+
 void cVillager::HandleFarmerPrepareFarmCrops()
 {
 	if (!m_World->VillagersShouldHarvestCrops())
@@ -112,15 +118,16 @@ void cVillager::HandleFarmerPrepareFarmCrops()
 	}
 
 	cBlockArea Surrounding;
-	/// Read a 11x7x11 area.
+
+	// Read a 11x7x11 area:
 	Surrounding.Read(
-		m_World,
-		(int) GetPosX() - 5,
-		(int) GetPosX() + 6,
-		(int) GetPosY() - 3,
-		(int) GetPosY() + 4,
-		(int) GetPosZ() - 5,
-		(int) GetPosZ() + 6
+		*m_World,
+		FloorC(GetPosX()) - 5,
+		FloorC(GetPosX()) + 6,
+		FloorC(GetPosY()) - 3,
+		FloorC(GetPosY()) + 4,
+		FloorC(GetPosZ()) - 5,
+		FloorC(GetPosZ()) + 6
 	);
 
 	for (int I = 0; I < 5; I++)
@@ -142,8 +149,8 @@ void cVillager::HandleFarmerPrepareFarmCrops()
 			}
 
 			m_VillagerAction = true;
-			m_CropsPos = Vector3i((int) GetPosX() + X - 5, (int) GetPosY() + Y - 3, (int) GetPosZ() + Z - 5);
-			MoveToPosition(Vector3f((float) (m_CropsPos.x + 0.5), (float) m_CropsPos.y, (float) (m_CropsPos.z + 0.5)));
+			m_CropsPos = Vector3i(static_cast<int>(GetPosX()) + X - 5, static_cast<int>(GetPosY()) + Y - 3, static_cast<int>(GetPosZ()) + Z - 5);
+			MoveToPosition(Vector3d(m_CropsPos.x + 0.5, m_CropsPos.y + 0.0, m_CropsPos.z + 0.5));
 			return;
 		}  // for Y loop.
 	}  // Repeat the procces 5 times.
@@ -156,21 +163,18 @@ void cVillager::HandleFarmerPrepareFarmCrops()
 void cVillager::HandleFarmerTryHarvestCrops()
 {
 	// Harvest the crops if the villager isn't moving and if the crops are closer then 2 blocks.
-	if (!m_IsFollowingPath && (GetPosition() - m_CropsPos).Length() < 2)
+	if (!m_PathfinderActivated && (GetPosition() - m_CropsPos).Length() < 2)
 	{
 		// Check if the blocks didn't change while the villager was walking to the coordinates.
 		BLOCKTYPE CropBlock = m_World->GetBlock(m_CropsPos.x, m_CropsPos.y, m_CropsPos.z);
 		if (IsBlockFarmable(CropBlock) && m_World->GetBlockMeta(m_CropsPos.x, m_CropsPos.y, m_CropsPos.z) == 0x7)
 		{
-			cBlockHandler * Handler = cBlockInfo::GetHandler(CropBlock);
-			cChunkInterface ChunkInterface(m_World->GetChunkMap());
-			cBlockInServerPluginInterface PluginInterface(*m_World);
-			Handler->DropBlock(ChunkInterface, *m_World, PluginInterface, this, m_CropsPos.x, m_CropsPos.y, m_CropsPos.z);
-			m_World->SetBlock(m_CropsPos.x, m_CropsPos.y, m_CropsPos.z, E_BLOCK_AIR, 0);
+			m_World->DropBlockAsPickups(m_CropsPos, this, nullptr);
 			m_ActionCountDown = 20;
 		}
 	}
 }
+
 
 
 
@@ -192,6 +196,7 @@ bool cVillager::IsBlockFarmable(BLOCKTYPE a_BlockType)
 {
 	switch (a_BlockType)
 	{
+		case E_BLOCK_BEETROOTS:
 		case E_BLOCK_CROPS:
 		case E_BLOCK_POTATOES:
 		case E_BLOCK_CARROTS:

@@ -1,7 +1,6 @@
 
 #pragma once
 
-#include "BlockHandler.h"
 #include "BlockEntity.h"
 
 
@@ -9,17 +8,25 @@
 
 
 class cBlockFlowerPotHandler :
-	public cBlockEntityHandler
+	public cClearMetaOnDrop<cBlockEntityHandler>
 {
+	using super = cClearMetaOnDrop<cBlockEntityHandler>;
+
 public:
-	cBlockFlowerPotHandler(BLOCKTYPE a_BlockType) :
-		cBlockEntityHandler(a_BlockType)
+
+	cBlockFlowerPotHandler(BLOCKTYPE a_BlockType):
+		super(a_BlockType)
 	{
 	}
 
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
+
+
+
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
 	{
-		a_Pickups.push_back(cItem(E_ITEM_FLOWER_POT, 1, 0));
+		UNUSED(a_Meta);
+		return 0;
 	}
 } ;
 

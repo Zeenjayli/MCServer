@@ -7,13 +7,14 @@
 
 
 
-
-
 cChicken::cChicken(void) :
-	super("Chicken", mtChicken, "mob.chicken.hurt", "mob.chicken.hurt", 0.3, 0.4),
+	super("Chicken", mtChicken, "entity.chicken.hurt", "entity.chicken.death", 0.4, 0.7),
 	m_EggDropTimer(0)
 {
+	SetGravity(-2.0f);
+	SetAirDrag(0.0f);
 }
+
 
 
 
@@ -21,15 +22,21 @@ cChicken::cChicken(void) :
 void cChicken::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
 	super::Tick(a_Dt, a_Chunk);
-
-	if ((m_EggDropTimer == 6000) && (m_World->GetTickRandomNumber(1) == 0))
+	if (!IsTicking())
 	{
-		cItems Drops;
-		m_EggDropTimer = 0;
-		Drops.push_back(cItem(E_ITEM_EGG, 1));
-		m_World->SpawnItemPickups(Drops, GetPosX(), GetPosY(), GetPosZ(), 10);
+		// The base class tick destroyed us
+		return;
 	}
-	else if (m_EggDropTimer == 12000)
+
+	if (IsBaby())
+	{
+		return;  // Babies don't lay eggs
+	}
+
+	if (
+		((m_EggDropTimer == 6000) && GetRandomProvider().RandBool()) ||
+		m_EggDropTimer == 12000
+	)
 	{
 		cItems Drops;
 		m_EggDropTimer = 0;
@@ -48,7 +55,12 @@ void cChicken::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 
 void cChicken::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 {
-	int LootingLevel = 0;
+	if (IsBaby())
+	{
+		return;  // Babies don't drop items
+	}
+
+	unsigned int LootingLevel = 0;
 	if (a_Killer != nullptr)
 	{
 		LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);
@@ -61,6 +73,12 @@ void cChicken::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 
 
 
+bool cChicken::DoTakeDamage(TakeDamageInfo & a_TDI)
+{
+	if (a_TDI.DamageType == dtFalling)
+	{
+		return false;
+	}
 
-
-
+	return super::DoTakeDamage(a_TDI);
+}

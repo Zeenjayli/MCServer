@@ -17,14 +17,20 @@
 
 
 class cBlockFarmlandHandler :
-	public cBlockHandler
+	public cClearMetaOnDrop<cBlockHandler>
 {
-	
+	using super = cClearMetaOnDrop<cBlockHandler>;
+
 public:
-	cBlockFarmlandHandler(BLOCKTYPE a_BlockType) :
-		cBlockHandler(a_BlockType)
+
+	cBlockFarmlandHandler(BLOCKTYPE a_BlockType):
+		super(a_BlockType)
 	{
 	}
+
+
+
+
 
 	virtual void OnUpdate(cChunkInterface & cChunkInterface, cWorldInterface & a_WorldInterface, cBlockPluginInterface & a_PluginInterface, cChunk & a_Chunk, int a_RelX, int a_RelY, int a_RelZ) override
 	{
@@ -45,9 +51,10 @@ public:
 		}
 
 		// Farmland too dry. If nothing is growing on top, turn back to dirt:
-		BLOCKTYPE UpperBlock = (a_RelY >= cChunkDef::Height - 1) ? E_BLOCK_AIR : a_Chunk.GetBlock(a_RelX, a_RelY + 1, a_RelZ);
+		BLOCKTYPE UpperBlock = (a_RelY >= cChunkDef::Height - 1) ? static_cast<BLOCKTYPE>(E_BLOCK_AIR) : a_Chunk.GetBlock(a_RelX, a_RelY + 1, a_RelZ);
 		switch (UpperBlock)
 		{
+			case E_BLOCK_BEETROOTS:
 			case E_BLOCK_CROPS:
 			case E_BLOCK_POTATOES:
 			case E_BLOCK_CARROTS:
@@ -59,30 +66,41 @@ public:
 			}
 			default:
 			{
-				a_Chunk.SetBlock(a_RelX, a_RelY, a_RelZ, E_BLOCK_DIRT, 0);
+				a_Chunk.SetBlock({a_RelX, a_RelY, a_RelZ}, E_BLOCK_DIRT, 0);
 				break;
 			}
 		}
 	}
 
-	virtual void OnNeighborChanged(cChunkInterface & a_ChunkInterface, int a_BlockX, int a_BlockY, int a_BlockZ) override
+
+
+
+
+	virtual void OnNeighborChanged(cChunkInterface & a_ChunkInterface, Vector3i a_BlockPos, eBlockFace a_WhichNeighbor) override
 	{
-		if (a_BlockY >= cChunkDef::Height)
+		// Don't care about any neighbor but the one above us (fix recursion loop in #2213):
+		if (a_WhichNeighbor != BLOCK_FACE_YP)
 		{
 			return;
 		}
 
-		BLOCKTYPE UpperBlock = a_ChunkInterface.GetBlock(a_BlockX, a_BlockY + 1, a_BlockZ);
-		if (cBlockInfo::FullyOccupiesVoxel(UpperBlock))
+		// Don't care about anything if we're at the top of the world:
+		if (a_BlockPos.y >= cChunkDef::Height)
 		{
-			a_ChunkInterface.SetBlock(a_BlockX, a_BlockY, a_BlockZ, E_BLOCK_DIRT, 0);
+			return;
+		}
+
+		// Check whether we should revert to dirt:
+		auto upperBlock = a_ChunkInterface.GetBlock(a_BlockPos.addedY(1));
+		if (cBlockInfo::FullyOccupiesVoxel(upperBlock))
+		{
+			a_ChunkInterface.SetBlock(a_BlockPos, E_BLOCK_DIRT, 0);
 		}
 	}
 
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
-	{
-		a_Pickups.Add(E_BLOCK_DIRT, 1, 0);  // Reset meta
-	}
+
+
+
 
 	bool IsWaterInNear(cChunk & a_Chunk, int a_RelX, int a_RelY, int a_RelZ)
 	{
@@ -93,12 +111,12 @@ public:
 		}
 
 		// Search for water in a close proximity:
-		// Ref.: http://www.minecraftwiki.net/wiki/Farmland#Hydrated_Farmland_Tiles
+		// Ref.: https://minecraft.gamepedia.com/Farmland#Hydration
 		// TODO: Rewrite this to use the chunk and its neighbors directly
 		cBlockArea Area;
 		int BlockX = a_RelX + a_Chunk.GetPosX() * cChunkDef::Width;
 		int BlockZ = a_RelZ + a_Chunk.GetPosZ() * cChunkDef::Width;
-		if (!Area.Read(a_Chunk.GetWorld(), BlockX - 4, BlockX + 4, a_RelY, a_RelY + 1, BlockZ - 4, BlockZ + 4))
+		if (!Area.Read(*a_Chunk.GetWorld(), BlockX - 4, BlockX + 4, a_RelY, a_RelY + 1, BlockZ - 4, BlockZ + 4))
 		{
 			// Too close to the world edge, cannot check surroundings
 			return false;
@@ -116,8 +134,16 @@ public:
 
 		return false;
 	}
+
+	virtual bool CanSustainPlant(BLOCKTYPE a_Plant) override
+	{
+		return (
+			(a_Plant == E_BLOCK_BEETROOTS) ||
+			(a_Plant == E_BLOCK_CROPS) ||
+			(a_Plant == E_BLOCK_CARROTS) ||
+			(a_Plant == E_BLOCK_POTATOES) ||
+			(a_Plant == E_BLOCK_MELON_STEM) ||
+			(a_Plant == E_BLOCK_PUMPKIN_STEM)
+		);
+	}
 } ;
-
-
-
-

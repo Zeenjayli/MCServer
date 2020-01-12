@@ -9,7 +9,7 @@
 
 
 cBlaze::cBlaze(void) :
-	super("Blaze", mtBlaze, "mob.blaze.hit", "mob.blaze.death", 0.6, 1.8)
+	super("Blaze", mtBlaze, "entity.blaze.hurt", "entity.blaze.death", 0.6, 1.8)
 {
 	SetGravity(-8.0f);
 	SetAirDrag(0.05f);
@@ -23,7 +23,7 @@ void cBlaze::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 {
 	if ((a_Killer != nullptr) && (a_Killer->IsPlayer() || a_Killer->IsA("cWolf")))
 	{
-		int LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);
+		unsigned int LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);
 		AddRandomDropItem(a_Drops, 0, 1 + LootingLevel, E_ITEM_BLAZE_ROD);
 	}
 }
@@ -32,28 +32,25 @@ void cBlaze::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 
 
 
-void cBlaze::Attack(std::chrono::milliseconds a_Dt)
+bool cBlaze::Attack(std::chrono::milliseconds a_Dt)
 {
-	m_AttackInterval += (static_cast<float>(a_Dt.count()) / 1000) * m_AttackRate;
-
-	if ((m_Target != nullptr) && (m_AttackInterval > 3.0))
+	if ((GetTarget() != nullptr) && (m_AttackCoolDownTicksLeft == 0))
 	{
 		// Setting this higher gives us more wiggle room for attackrate
 		Vector3d Speed = GetLookVector() * 20;
 		Speed.y = Speed.y + 1;
-		cFireChargeEntity * FireCharge = new cFireChargeEntity(this, GetPosX(), GetPosY() + 1, GetPosZ(), Speed);
-		if (FireCharge == nullptr)
+
+		auto FireCharge = cpp14::make_unique<cFireChargeEntity>(this, GetPosition().addedY(1), Speed);
+		auto FireChargePtr = FireCharge.get();
+		if (!FireChargePtr->Initialize(std::move(FireCharge), *m_World))
 		{
-			return;
+			return false;
 		}
-		if (!FireCharge->Initialize(*m_World))
-		{
-			delete FireCharge;
-			FireCharge = nullptr;
-			return;
-		}
-		m_World->BroadcastSpawnEntity(*FireCharge);
-		m_AttackInterval = 0.0;
+
+		ResetAttackCooldown();
 		// ToDo: Shoot 3 fireballs instead of 1.
+
+		return true;
 	}
+	return false;
 }

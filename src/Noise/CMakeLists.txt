@@ -1,14 +1,10 @@
 
-cmake_minimum_required (VERSION 2.6)
-project (MCServer)
-
-include_directories ("${PROJECT_SOURCE_DIR}/../")
-
 SET (SRCS
 	Noise.cpp
 )
 
 SET (HDRS
+	InterpolNoise.h
 	Noise.h
 	OctavedNoise.h
 	RidgedNoise.h
@@ -16,6 +12,5 @@ SET (HDRS
 
 if(NOT MSVC)
 	add_library(Noise ${SRCS} ${HDRS})
-
-	target_link_libraries(Noise OSSupport)
+	target_link_libraries(Noise fmt::fmt OSSupport)
 endif()

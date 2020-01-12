@@ -2,15 +2,15 @@
 #include "Globals.h"  // NOTE: MSVC stupidness requires this to be the same across all modules
 
 #include "ItemFrame.h"
-#include "ClientHandle.h"
 #include "Player.h"
+#include "../ClientHandle.h"
 
 
 
 
 
-cItemFrame::cItemFrame(eBlockFace a_BlockFace, double a_X, double a_Y, double a_Z) :
-	cHangingEntity(etItemFrame, a_BlockFace, a_X, a_Y, a_Z),
+cItemFrame::cItemFrame(eBlockFace a_BlockFace, Vector3d a_Pos):
+	super(etItemFrame, a_BlockFace, a_Pos),
 	m_Item(E_BLOCK_AIR),
 	m_ItemRotation(0)
 {
@@ -52,7 +52,6 @@ void cItemFrame::OnRightClicked(cPlayer & a_Player)
 
 
 
-
 void cItemFrame::KilledBy(TakeDamageInfo & a_TDI)
 {
 	if (m_Item.IsEmpty())
@@ -62,7 +61,7 @@ void cItemFrame::KilledBy(TakeDamageInfo & a_TDI)
 		return;
 	}
 
-	if ((a_TDI.Attacker != nullptr) && a_TDI.Attacker->IsPlayer() && !((cPlayer *)a_TDI.Attacker)->IsGameModeCreative())
+	if ((a_TDI.Attacker != nullptr) && a_TDI.Attacker->IsPlayer() && !static_cast<cPlayer *>(a_TDI.Attacker)->IsGameModeCreative())
 	{
 		cItems Item;
 		Item.push_back(m_Item);
@@ -83,7 +82,7 @@ void cItemFrame::KilledBy(TakeDamageInfo & a_TDI)
 
 void cItemFrame::GetDrops(cItems & a_Items, cEntity * a_Killer)
 {
-	if ((a_Killer != nullptr) && a_Killer->IsPlayer() && !((cPlayer *)a_Killer)->IsGameModeCreative())
+	if ((a_Killer != nullptr) && a_Killer->IsPlayer() && !static_cast<cPlayer *>(a_Killer)->IsGameModeCreative())
 	{
 		a_Items.push_back(cItem(E_ITEM_ITEM_FRAME));
 	}
@@ -96,7 +95,7 @@ void cItemFrame::GetDrops(cItems & a_Items, cEntity * a_Killer)
 void cItemFrame::SpawnOn(cClientHandle & a_ClientHandle)
 {
 	super::SpawnOn(a_ClientHandle);
-	a_ClientHandle.SendSpawnObject(*this, 71, GetProtocolFacing(), (Byte)GetYaw(), (Byte)GetPitch());
+	a_ClientHandle.SendSpawnObject(*this, 71, GetProtocolFacing(), static_cast<Byte>(GetYaw()), static_cast<Byte>(GetPitch()));
 	a_ClientHandle.SendEntityMetadata(*this);
 }
 

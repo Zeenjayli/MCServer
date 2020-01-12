@@ -17,13 +17,15 @@ inheritance doesn't work properly (#1789).
 $#include "../Globals.h"
 
 // Typedefs from Globals.h, so that we don't have to process that file:
-typedef long long Int64;
-typedef int       Int32;
-typedef short     Int16;
+typedef signed long long Int64;
+typedef signed int       Int32;
+typedef signed short     Int16;
+typedef signed char      Int8;
 
 typedef unsigned long long UInt64;
 typedef unsigned int       UInt32;
 typedef unsigned short     UInt16;
+typedef unsigned char      UInt8;
 
 
 $cfile "../Vector3.h"
@@ -38,7 +40,6 @@ $cfile "LuaFunctions.h"
 $cfile "PluginManager.h"
 $cfile "Plugin.h"
 $cfile "PluginLua.h"
-$cfile "WebPlugin.h"
 $cfile "LuaWindow.h"
 
 $cfile "../BlockID.h"
@@ -47,6 +48,8 @@ $cfile "../StringUtils.h"
 $cfile "../Defines.h"
 $cfile "../ChatColor.h"
 $cfile "../ClientHandle.h"
+$cfile "../Color.h"
+$cfile "../EffectID.h"
 $cfile "../Server.h"
 $cfile "../World.h"
 $cfile "../Inventory.h"
@@ -68,20 +71,25 @@ $cfile "../MapManager.h"
 $cfile "../Scoreboard.h"
 $cfile "../Statistics.h"
 $cfile "../Protocol/MojangAPI.h"
+$cfile "../UUID.h"
 
 // Entities:
 $cfile "../Entities/Entity.h"
+$cfile "../Entities/Boat.h"
 $cfile "../Entities/Pawn.h"
 $cfile "../Entities/ProjectileEntity.h"
 $cfile "../Entities/ArrowEntity.h"
 $cfile "../Entities/EntityEffect.h"
 $cfile "../Entities/ExpBottleEntity.h"
+$cfile "../Entities/ExpOrb.h"
+$cfile "../Entities/FallingBlock.h"
 $cfile "../Entities/FireChargeEntity.h"
 $cfile "../Entities/FireworkEntity.h"
 $cfile "../Entities/Floater.h"
 $cfile "../Entities/GhastFireballEntity.h"
 $cfile "../Entities/HangingEntity.h"
 $cfile "../Entities/ItemFrame.h"
+$cfile "../Entities/LeashKnot.h"
 $cfile "../Entities/Player.h"
 $cfile "../Entities/Painting.h"
 $cfile "../Entities/Pickup.h"
@@ -97,7 +105,9 @@ $cfile "../Mobs/Monster.h"
 // Block entities:
 $cfile "../BlockEntities/BlockEntity.h"
 $cfile "../BlockEntities/BeaconEntity.h"
+$cfile "../BlockEntities/BedEntity.h"
 $cfile "../BlockEntities/BlockEntityWithItems.h"
+$cfile "../BlockEntities/BrewingstandEntity.h"
 $cfile "../BlockEntities/ChestEntity.h"
 $cfile "../BlockEntities/CommandBlockEntity.h"
 $cfile "../BlockEntities/DropSpenserEntity.h"

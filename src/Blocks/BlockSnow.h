@@ -11,14 +11,18 @@ class cBlockSnowHandler :
 	public cBlockHandler
 {
 public:
+	enum
+	{
+		FullBlockMeta = 7  // Meta value of a full-height snow block
+	};
+
 	cBlockSnowHandler(BLOCKTYPE a_BlockType)
 		: cBlockHandler(a_BlockType)
 	{
 	}
 
-
 	virtual bool GetPlacementBlockTypeMeta(
-		cChunkInterface & a_ChunkInterface, cPlayer * a_Player,
+		cChunkInterface & a_ChunkInterface, cPlayer & a_Player,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
 		int a_CursorX, int a_CursorY, int a_CursorZ,
 		BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta
@@ -28,24 +32,32 @@ public:
 
 		BLOCKTYPE BlockBeforePlacement;
 		NIBBLETYPE MetaBeforePlacement;
-		a_ChunkInterface.GetBlockTypeMeta(a_BlockX, a_BlockY, a_BlockZ, BlockBeforePlacement, MetaBeforePlacement);
+		a_ChunkInterface.GetBlockTypeMeta({a_BlockX, a_BlockY, a_BlockZ}, BlockBeforePlacement, MetaBeforePlacement);
 
-		if ((BlockBeforePlacement == E_BLOCK_SNOW) && (MetaBeforePlacement < 7))
+		if ((BlockBeforePlacement == E_BLOCK_SNOW) && (MetaBeforePlacement < FullBlockMeta))
 		{
 			// Only increment if:
 			//  - A snow block was already there (not first time placement) AND
-			//  - Height is smaller than 7, the maximum possible height
-			MetaBeforePlacement++;
+			//  - Height is smaller than the maximum possible
+			a_BlockMeta = MetaBeforePlacement + 1;
+			return true;
 		}
-		
-		a_BlockMeta = MetaBeforePlacement;
-		return true;
+
+		// First time placement, check placement is valid
+		a_BlockMeta = 0;
+
+		BLOCKTYPE BlockBelow;
+		NIBBLETYPE MetaBelow;
+		return (
+			(a_BlockY > 0) &&
+			a_ChunkInterface.GetBlockTypeMeta({a_BlockX, a_BlockY - 1, a_BlockZ}, BlockBelow, MetaBelow) &&
+			CanBeOn(BlockBelow, MetaBelow)
+		);
 	}
 
-
-	virtual bool DoesIgnoreBuildCollision(cPlayer * a_Player, NIBBLETYPE a_Meta) override
+	virtual bool DoesIgnoreBuildCollision(cChunkInterface & a_ChunkInterface, Vector3i a_Pos, cPlayer & a_Player, NIBBLETYPE a_Meta) override
 	{
-		if ((a_Player->GetEquippedItem().m_ItemType == E_BLOCK_SNOW) && (a_Meta < 7))
+		if ((a_Player.GetEquippedItem().m_ItemType == E_BLOCK_SNOW) && (a_Meta < FullBlockMeta))
 		{
 			return true;  // If a player is holding a (thin) snow block and it's size can be increased, return collision ignored
 		}
@@ -57,12 +69,32 @@ public:
 
 		return false;
 	}
-	
 
-	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
+
+
+
+
+	virtual cItems ConvertToPickups(NIBBLETYPE a_BlockMeta, cBlockEntity * a_BlockEntity, const cEntity * a_Digger, const cItem * a_Tool) override
 	{
-		a_Pickups.push_back(cItem(E_ITEM_SNOWBALL, 1, 0));
+		// No drop unless dug up with a shovel
+		if ((a_Tool == nullptr) || !ItemCategory::IsShovel(a_Tool->m_ItemType))
+		{
+			return {};
+		}
+
+		if (ToolHasSilkTouch(a_Tool))
+		{
+			return cItem(m_BlockType, 1, 0);
+		}
+		else
+		{
+			// Drop as many snowballs as there were "layers" of snow:
+			return cItem(E_ITEM_SNOWBALL, 1 + (a_BlockMeta & 0x07), 0);
+		}
 	}
+
+
+
 
 
 	virtual bool CanBeAt(cChunkInterface & a_ChunkInterface, int a_RelX, int a_RelY, int a_RelZ, const cChunk & a_Chunk) override
@@ -71,22 +103,44 @@ public:
 		{
 			BLOCKTYPE BlockBelow = a_Chunk.GetBlock(a_RelX, a_RelY - 1, a_RelZ);
 			NIBBLETYPE MetaBelow = a_Chunk.GetMeta(a_RelX, a_RelY - 1, a_RelZ);
-			
-			if (cBlockInfo::IsSnowable(BlockBelow) || ((BlockBelow == E_BLOCK_SNOW) && (MetaBelow == 7)))
-			{
-				// If block below is snowable, or it is a thin slow block and has a meta of 7 (full thin snow block), say yay
-				return true;
-			}
+
+			return CanBeOn(BlockBelow, MetaBelow);
 		}
-		
+
 		return false;
 	}
-	
-	
+
 	virtual bool DoesDropOnUnsuitable(void) override
 	{
 		return false;
 	}
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 14;
+	}
+
+	virtual bool IsInsideBlock(Vector3d a_Position, const BLOCKTYPE a_BlockType, const NIBBLETYPE a_BlockMeta) override
+	{
+		return a_Position.y < (cBlockInfo::GetBlockHeight(a_BlockType) * (a_BlockMeta & 0x07));
+	}
+
+private:
+
+	/** Returns true if snow can be placed on top of a block with the given type and meta. */
+	static bool CanBeOn(BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta)
+	{
+		// If block below is snowable, or it is a thin slow block and is a full thin snow block, say yay
+		return (
+			cBlockInfo::IsSnowable(a_BlockType) ||
+			(
+				(a_BlockType == E_BLOCK_SNOW) &&
+				(a_BlockMeta == FullBlockMeta)
+			)
+		);
+	}
+
 } ;
 
 

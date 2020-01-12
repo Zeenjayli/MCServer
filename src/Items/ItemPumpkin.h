@@ -1,12 +1,4 @@
 
-// ItemPumpkin.h
-
-// Declares the cItemPumpkinHandler class representing the pumpkin block in its item form
-
-
-
-
-
 #pragma once
 
 #include "ItemHandler.h"
@@ -96,7 +88,7 @@ public:
 		}
 
 		// Spawn the golem:
-		a_World.SpawnMob(static_cast<double>(a_BlockX) + 0.5, a_BlockY - 2, static_cast<double>(a_BlockZ) + 0.5, mtSnowGolem);
+		a_World.SpawnMob(static_cast<double>(a_BlockX) + 0.5, a_BlockY - 2, static_cast<double>(a_BlockZ) + 0.5, mtSnowGolem, false);
 		return true;
 	}
 
@@ -142,7 +134,7 @@ public:
 			}
 
 			// Spawn the golem:
-			a_World.SpawnMob(static_cast<double>(a_BlockX) + 0.5, a_BlockY - 2, static_cast<double>(a_BlockZ) + 0.5, mtIronGolem);
+			a_World.SpawnMob(static_cast<double>(a_BlockX) + 0.5, a_BlockY - 2, static_cast<double>(a_BlockZ) + 0.5, mtIronGolem, false);
 			return true;
 		}  // for i - ArmOffsets[]
 
@@ -150,7 +142,3 @@ public:
 		return false;
 	}
 };
-
-
-
-

@@ -20,12 +20,11 @@
 
 
 
-class cMinecartCollisionCallback :
-	public cEntityCallback
+class cMinecartCollisionCallback
 {
 public:
 	cMinecartCollisionCallback(Vector3d a_Pos, double a_Height, double a_Width, UInt32 a_UniqueID, UInt32 a_AttacheeUniqueID) :
-		m_DoesInteserct(false),
+		m_DoesIntersect(false),
 		m_CollidedEntityPos(0, 0, 0),
 		m_Pos(a_Pos),
 		m_Height(a_Height),
@@ -35,26 +34,32 @@ public:
 	{
 	}
 
-	virtual bool Item(cEntity * a_Entity) override
+	bool operator () (cEntity & a_Entity)
 	{
-		ASSERT(a_Entity != nullptr);
-
-		if (!a_Entity->IsPlayer() && !a_Entity->IsMob() && !a_Entity->IsMinecart() && !a_Entity->IsBoat())
+		if (
+			(
+				!a_Entity.IsPlayer() ||
+				static_cast<cPlayer &>(a_Entity).IsGameModeSpectator()  // Spectators doesn't collide with anything
+			) &&
+			!a_Entity.IsMob() &&
+			!a_Entity.IsMinecart() &&
+			!a_Entity.IsBoat()
+		)
 		{
 			return false;
 		}
-		else if ((a_Entity->GetUniqueID() == m_UniqueID) || (a_Entity->GetUniqueID() == m_AttacheeUniqueID))
+		else if ((a_Entity.GetUniqueID() == m_UniqueID) || (a_Entity.GetUniqueID() == m_AttacheeUniqueID))
 		{
 			return false;
 		}
 
-		cBoundingBox bbEntity(a_Entity->GetPosition(), a_Entity->GetWidth() / 2, a_Entity->GetHeight());
+		cBoundingBox bbEntity(a_Entity.GetPosition(), a_Entity.GetWidth() / 2, a_Entity.GetHeight());
 		cBoundingBox bbMinecart(Vector3d(m_Pos.x, floor(m_Pos.y), m_Pos.z), m_Width / 2, m_Height);
 
 		if (bbEntity.DoesIntersect(bbMinecart))
 		{
-			m_CollidedEntityPos = a_Entity->GetPosition();
-			m_DoesInteserct = true;
+			m_CollidedEntityPos = a_Entity.GetPosition();
+			m_DoesIntersect = true;
 			return true;
 		}
 		return false;
@@ -62,7 +67,7 @@ public:
 
 	bool FoundIntersection(void) const
 	{
-		return m_DoesInteserct;
+		return m_DoesIntersect;
 	}
 
 	Vector3d GetCollidedEntityPosition(void) const
@@ -71,7 +76,7 @@ public:
 	}
 
 protected:
-	bool m_DoesInteserct;
+	bool m_DoesIntersect;
 
 	Vector3d m_CollidedEntityPos;
 
@@ -85,8 +90,11 @@ protected:
 
 
 
-cMinecart::cMinecart(ePayload a_Payload, double a_X, double a_Y, double a_Z) :
-	super(etMinecart, a_X, a_Y, a_Z, 0.98, 0.7),
+////////////////////////////////////////////////////////////////////////////////
+// cMinecart:
+
+cMinecart::cMinecart(ePayload a_Payload, Vector3d a_Pos):
+	super(etMinecart, a_Pos, 0.98, 0.7),
 	m_Payload(a_Payload),
 	m_LastDamage(0),
 	m_DetectorRailPosition(0, 0, 0),
@@ -104,9 +112,10 @@ cMinecart::cMinecart(ePayload a_Payload, double a_X, double a_Y, double a_Z) :
 
 
 
+
 void cMinecart::SpawnOn(cClientHandle & a_ClientHandle)
 {
-	a_ClientHandle.SendSpawnVehicle(*this, 10, (char)m_Payload);  // 10 = Minecarts
+	a_ClientHandle.SendSpawnVehicle(*this, 10, static_cast<char>(m_Payload));  // 10 = Minecarts
 	a_ClientHandle.SendEntityMetadata(*this);
 }
 
@@ -116,10 +125,7 @@ void cMinecart::SpawnOn(cClientHandle & a_ClientHandle)
 
 void cMinecart::HandlePhysics(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
-	if (IsDestroyed())  // Mainly to stop detector rails triggering again after minecart is dead
-	{
-		return;
-	}
+	ASSERT(IsTicking());
 
 	int PosY = POSY_TOINT;
 	if ((PosY <= 0) || (PosY >= cChunkDef::Height))
@@ -129,11 +135,10 @@ void cMinecart::HandlePhysics(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 		BroadcastMovementUpdate();
 		return;
 	}
-	
-	int RelPosX = POSX_TOINT - a_Chunk.GetPosX() * cChunkDef::Width;
-	int RelPosZ = POSZ_TOINT - a_Chunk.GetPosZ() * cChunkDef::Width;
-	cChunk * Chunk = a_Chunk.GetRelNeighborChunkAdjustCoords(RelPosX, RelPosZ);
-	if (Chunk == nullptr)
+
+	auto relPos = a_Chunk.AbsoluteToRelative(GetPosition());
+	auto chunk = a_Chunk.GetRelNeighborChunkAdjustCoords(relPos);
+	if (chunk == nullptr)
 	{
 		// Inside an unloaded chunk, bail out all processing
 		return;
@@ -141,12 +146,12 @@ void cMinecart::HandlePhysics(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 
 	BLOCKTYPE InsideType;
 	NIBBLETYPE InsideMeta;
-	Chunk->GetBlockTypeMeta(RelPosX, PosY, RelPosZ, InsideType, InsideMeta);
+	chunk->GetBlockTypeMeta(relPos, InsideType, InsideMeta);
 
 	if (!IsBlockRail(InsideType))
 	{
 		// When a descending minecart hits a flat rail, it goes through the ground; check for this
-		Chunk->GetBlockTypeMeta(RelPosX, PosY + 1, RelPosZ, InsideType, InsideMeta);
+		chunk->GetBlockTypeMeta(relPos.addedY(1), InsideType, InsideMeta);
 		if (IsBlockRail(InsideType))
 		{
 			// Push cart upwards
@@ -186,12 +191,12 @@ void cMinecart::HandlePhysics(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 	{
 		// Not on rail, default physics
 		SetPosY(floor(GetPosY()) + 0.35);  // HandlePhysics overrides this if minecart can fall, else, it is to stop ground clipping minecart bottom when off-rail
-		super::HandlePhysics(a_Dt, *Chunk);
+		super::HandlePhysics(a_Dt, *chunk);
 	}
 
 	if (m_bIsOnDetectorRail && !Vector3i(POSX_TOINT, POSY_TOINT, POSZ_TOINT).Equals(m_DetectorRailPosition))
 	{
-		m_World->SetBlock(m_DetectorRailPosition.x, m_DetectorRailPosition.y, m_DetectorRailPosition.z, E_BLOCK_DETECTOR_RAIL, m_World->GetBlockMeta(m_DetectorRailPosition) & 0x07);
+		m_World->SetBlock(m_DetectorRailPosition, E_BLOCK_DETECTOR_RAIL, m_World->GetBlockMeta(m_DetectorRailPosition) & 0x07);
 		m_bIsOnDetectorRail = false;
 	}
 	else if (WasDetectorRail)
@@ -199,7 +204,7 @@ void cMinecart::HandlePhysics(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 		m_bIsOnDetectorRail = true;
 		m_DetectorRailPosition = Vector3i(POSX_TOINT, POSY_TOINT, POSZ_TOINT);
 	}
-	
+
 	// Broadcast positioning changes to client
 	BroadcastMovementUpdate();
 }
@@ -214,7 +219,7 @@ void cMinecart::HandleRailPhysics(NIBBLETYPE a_RailMeta, std::chrono::millisecon
 	NOTE: Please bear in mind that taking away from negatives make them even more negative,
 	adding to negatives make them positive, etc.
 	*/
-	
+
 	switch (a_RailMeta)
 	{
 		case E_META_RAIL_ZM_ZP:  // NORTHSOUTH
@@ -230,18 +235,18 @@ void cMinecart::HandleRailPhysics(NIBBLETYPE a_RailMeta, std::chrono::millisecon
 			{
 				return;
 			}
-			
+
 			if (GetSpeedZ() != NO_SPEED)  // Don't do anything if cart is stationary
 			{
 				if (GetSpeedZ() > 0)
 				{
 					// Going SOUTH, slow down
-					AddSpeedZ(-0.1);
+					ApplyAcceleration({ 0.0, 0.0, 1.0 }, -0.1);
 				}
 				else
 				{
 					// Going NORTH, slow down
-					AddSpeedZ(0.1);
+					ApplyAcceleration({ 0.0, 0.0, -1.0 }, -0.1);
 				}
 			}
 			break;
@@ -263,11 +268,11 @@ void cMinecart::HandleRailPhysics(NIBBLETYPE a_RailMeta, std::chrono::millisecon
 			{
 				if (GetSpeedX() > 0)
 				{
-					AddSpeedX(-0.1);
+					ApplyAcceleration({ 1.0, 0.0, 0.0 }, -0.1);
 				}
 				else
 				{
-					AddSpeedX(0.1);
+					ApplyAcceleration({ -1.0, 0.0, 0.0 }, -0.1);
 				}
 			}
 			break;
@@ -280,11 +285,8 @@ void cMinecart::HandleRailPhysics(NIBBLETYPE a_RailMeta, std::chrono::millisecon
 			if (GetSpeedZ() >= 0)
 			{
 				// SpeedZ POSITIVE, going SOUTH
-				if (GetSpeedZ() <= MAX_SPEED)  // Speed limit
-				{
-					AddSpeedZ(0.5);  // Speed up
-					SetSpeedY(-GetSpeedZ());  // Downward movement is negative (0 minus positive numbers is negative)
-				}
+				AddSpeedZ(0.5);  // Speed up
+				SetSpeedY(-GetSpeedZ());  // Downward movement is negative (0 minus positive numbers is negative)
 			}
 			else
 			{
@@ -307,12 +309,9 @@ void cMinecart::HandleRailPhysics(NIBBLETYPE a_RailMeta, std::chrono::millisecon
 			}
 			else
 			{
-				if (GetSpeedZ() >= MAX_SPEED_NEGATIVE)  // Speed limit
-				{
-					// SpeedZ NEGATIVE, going NORTH
-					AddSpeedZ(-0.5);  // Speed up
-					SetSpeedY(GetSpeedZ());  // Downward movement negative
-				}
+				// SpeedZ NEGATIVE, going NORTH
+				AddSpeedZ(-0.5);  // Speed up
+				SetSpeedY(GetSpeedZ());  // Downward movement negative
 			}
 			break;
 		}
@@ -323,11 +322,8 @@ void cMinecart::HandleRailPhysics(NIBBLETYPE a_RailMeta, std::chrono::millisecon
 
 			if (GetSpeedX() >= NO_SPEED)
 			{
-				if (GetSpeedX() <= MAX_SPEED)
-				{
-					AddSpeedX(0.5);
-					SetSpeedY(-GetSpeedX());
-				}
+				AddSpeedX(0.5);
+				SetSpeedY(-GetSpeedX());
 			}
 			else
 			{
@@ -348,11 +344,8 @@ void cMinecart::HandleRailPhysics(NIBBLETYPE a_RailMeta, std::chrono::millisecon
 			}
 			else
 			{
-				if (GetSpeedX() >= MAX_SPEED_NEGATIVE)
-				{
-					AddSpeedX(-0.5);
-					SetSpeedY(GetSpeedX());
-				}
+				AddSpeedX(-0.5);
+				SetSpeedY(GetSpeedX());
 			}
 			break;
 		}
@@ -413,18 +406,12 @@ void cMinecart::HandleRailPhysics(NIBBLETYPE a_RailMeta, std::chrono::millisecon
 
 
 
+
 void cMinecart::HandlePoweredRailPhysics(NIBBLETYPE a_RailMeta)
 {
-	// Initialise to 'slow down' values
-	int AccelDecelSpeed = -2;
-	int AccelDecelNegSpeed = 2;
-
-	if ((a_RailMeta & 0x8) == 0x8)
-	{
-		// Rail powered - set variables to 'speed up' values
-		AccelDecelSpeed = 1;
-		AccelDecelNegSpeed = -1;
-	}
+	// If the rail is powered set to speed up else slow down.
+	const bool IsRailPowered = ((a_RailMeta & 0x8) == 0x8);
+	const double Acceleration = IsRailPowered ? 1.0 : -2.0;
 
 	switch (a_RailMeta & 0x07)
 	{
@@ -440,16 +427,31 @@ void cMinecart::HandlePoweredRailPhysics(NIBBLETYPE a_RailMeta)
 			{
 				return;
 			}
-			
+
 			if (GetSpeedZ() != NO_SPEED)
 			{
 				if (GetSpeedZ() > NO_SPEED)
 				{
-					AddSpeedZ(AccelDecelSpeed);
+					ApplyAcceleration({ 0.0, 0.0, 1.0 }, Acceleration);
 				}
 				else
 				{
-					AddSpeedZ(AccelDecelNegSpeed);
+					ApplyAcceleration({ 0.0, 0.0, -1.0 }, Acceleration);
+				}
+			}
+			// If rail is powered check for nearby blocks that could kick-start the minecart
+			else if (IsRailPowered)
+			{
+				bool IsBlockZP = IsSolidBlockAtOffset(0, 0, 1);
+				bool IsBlockZM = IsSolidBlockAtOffset(0, 0, -1);
+				// Only kick-start the minecart if a block is on one side, but not both
+				if (IsBlockZM && !IsBlockZP)
+				{
+					ApplyAcceleration({ 0.0, 0.0, 1.0 }, Acceleration);
+				}
+				else if (!IsBlockZM && IsBlockZP)
+				{
+					ApplyAcceleration({ 0.0, 0.0, -1.0 }, Acceleration);
 				}
 			}
 			break;
@@ -471,11 +473,26 @@ void cMinecart::HandlePoweredRailPhysics(NIBBLETYPE a_RailMeta)
 			{
 				if (GetSpeedX() > NO_SPEED)
 				{
-					AddSpeedX(AccelDecelSpeed);
+					ApplyAcceleration({ 1.0, 0.0, 0.0 }, Acceleration);
 				}
 				else
 				{
-					AddSpeedX(AccelDecelNegSpeed);
+					ApplyAcceleration({ -1.0, 0.0, 0.0 }, Acceleration);
+				}
+			}
+			// If rail is powered check for nearby blocks that could kick-start the minecart
+			else if (IsRailPowered)
+			{
+				bool IsBlockXP = IsSolidBlockAtOffset(1, 0, 0);
+				bool IsBlockXM = IsSolidBlockAtOffset(-1, 0, 0);
+				// Only kick-start the minecart if a block is on one side, but not both
+				if (IsBlockXM && !IsBlockXP)
+				{
+					ApplyAcceleration({ 1.0, 0.0, 0.0 }, Acceleration);
+				}
+				else if (!IsBlockXM && IsBlockXP)
+				{
+					ApplyAcceleration({ -1.0, 0.0, 0.0 }, Acceleration);
 				}
 			}
 			break;
@@ -487,15 +504,12 @@ void cMinecart::HandlePoweredRailPhysics(NIBBLETYPE a_RailMeta)
 
 			if (GetSpeedX() >= NO_SPEED)
 			{
-				if (GetSpeedX() <= MAX_SPEED)
-				{
-					AddSpeedX(AccelDecelSpeed);
-					SetSpeedY(-GetSpeedX());
-				}
+				ApplyAcceleration({ 1.0, 0.0, 0.0 }, Acceleration);
+				SetSpeedY(-GetSpeedX());
 			}
 			else
 			{
-				AddSpeedX(AccelDecelNegSpeed);
+				ApplyAcceleration({ -1.0, 0.0, 0.0 }, Acceleration);
 				SetSpeedY(-GetSpeedX());
 			}
 			break;
@@ -507,16 +521,13 @@ void cMinecart::HandlePoweredRailPhysics(NIBBLETYPE a_RailMeta)
 
 			if (GetSpeedX() > NO_SPEED)
 			{
-				AddSpeedX(AccelDecelSpeed);
+				ApplyAcceleration({ 1.0, 0.0, 0.0 }, Acceleration);
 				SetSpeedY(GetSpeedX());
 			}
 			else
 			{
-				if (GetSpeedX() >= MAX_SPEED_NEGATIVE)
-				{
-					AddSpeedX(AccelDecelNegSpeed);
-					SetSpeedY(GetSpeedX());
-				}
+				ApplyAcceleration({ -1.0, 0.0, 0.0 }, Acceleration);
+				SetSpeedY(GetSpeedX());
 			}
 			break;
 		}
@@ -527,15 +538,12 @@ void cMinecart::HandlePoweredRailPhysics(NIBBLETYPE a_RailMeta)
 
 			if (GetSpeedZ() >= NO_SPEED)
 			{
-				if (GetSpeedZ() <= MAX_SPEED)
-				{
-					AddSpeedZ(AccelDecelSpeed);
-					SetSpeedY(-GetSpeedZ());
-				}
+				ApplyAcceleration({ 0.0, 0.0, 1.0 }, Acceleration);
+				SetSpeedY(-GetSpeedZ());
 			}
 			else
 			{
-				AddSpeedZ(AccelDecelNegSpeed);
+				ApplyAcceleration({ 0.0, 0.0, -1.0 }, Acceleration);
 				SetSpeedY(-GetSpeedZ());
 			}
 			break;
@@ -547,16 +555,13 @@ void cMinecart::HandlePoweredRailPhysics(NIBBLETYPE a_RailMeta)
 
 			if (GetSpeedZ() > NO_SPEED)
 			{
-				AddSpeedZ(AccelDecelSpeed);
+				ApplyAcceleration({ 0.0, 0.0, 1.0 }, Acceleration);
 				SetSpeedY(GetSpeedZ());
 			}
 			else
 			{
-				if (GetSpeedZ() >= MAX_SPEED_NEGATIVE)
-				{
-					AddSpeedZ(AccelDecelNegSpeed);
-					SetSpeedY(GetSpeedZ());
-				}
+				ApplyAcceleration({ 0.0, 0.0, -1.0 }, Acceleration);
+				SetSpeedY(GetSpeedZ());
 			}
 			break;
 		}
@@ -575,6 +580,7 @@ void cMinecart::HandleDetectorRailPhysics(NIBBLETYPE a_RailMeta, std::chrono::mi
 	// No special handling
 	HandleRailPhysics(a_RailMeta & 0x07, a_Dt);
 }
+
 
 
 
@@ -717,6 +723,20 @@ void cMinecart::SnapToRail(NIBBLETYPE a_RailMeta)
 
 
 
+bool cMinecart::IsSolidBlockAtOffset(int a_XOffset, int a_YOffset, int a_ZOffset)
+{
+	BLOCKTYPE Block = m_World->GetBlock(POSX_TOINT + a_XOffset, POSY_TOINT + a_YOffset, POSZ_TOINT + a_ZOffset);
+	if (IsBlockRail(Block) || !cBlockInfo::IsSolid(Block))
+	{
+		return false;
+	}
+	return true;
+}
+
+
+
+
+
 bool cMinecart::TestBlockCollision(NIBBLETYPE a_RailMeta)
 {
 	switch (a_RailMeta)
@@ -725,11 +745,10 @@ bool cMinecart::TestBlockCollision(NIBBLETYPE a_RailMeta)
 		{
 			if (GetSpeedZ() > 0)
 			{
-				BLOCKTYPE Block = m_World->GetBlock(POSX_TOINT, POSY_TOINT, (int)ceil(GetPosZ()));
-				if (!IsBlockRail(Block) && cBlockInfo::IsSolid(Block))
+				if (IsSolidBlockAtOffset(0, 0, 1))
 				{
 					// We could try to detect a block in front based purely on coordinates, but xoft made a bounding box system - why not use? :P
-					cBoundingBox bbBlock(Vector3d(POSX_TOINT, POSY_TOINT, (int)ceil(GetPosZ())), 0.5, 1);
+					cBoundingBox bbBlock(Vector3d(POSX_TOINT, POSY_TOINT, static_cast<int>(ceil(GetPosZ()))), 0.5, 1);
 					cBoundingBox bbMinecart(Vector3d(GetPosX(), floor(GetPosY()), GetPosZ()), GetWidth() / 2, GetHeight());
 
 					if (bbBlock.DoesIntersect(bbMinecart))
@@ -742,8 +761,7 @@ bool cMinecart::TestBlockCollision(NIBBLETYPE a_RailMeta)
 			}
 			else if (GetSpeedZ() < 0)
 			{
-				BLOCKTYPE Block = m_World->GetBlock(POSX_TOINT, POSY_TOINT, POSZ_TOINT - 1);
-				if (!IsBlockRail(Block) && cBlockInfo::IsSolid(Block))
+				if (IsSolidBlockAtOffset(0, 0, -1))
 				{
 					cBoundingBox bbBlock(Vector3d(POSX_TOINT, POSY_TOINT, POSZ_TOINT - 1), 0.5, 1);
 					cBoundingBox bbMinecart(Vector3d(GetPosX(), floor(GetPosY()), GetPosZ() - 1), GetWidth() / 2, GetHeight());
@@ -762,10 +780,9 @@ bool cMinecart::TestBlockCollision(NIBBLETYPE a_RailMeta)
 		{
 			if (GetSpeedX() > 0)
 			{
-				BLOCKTYPE Block = m_World->GetBlock((int)ceil(GetPosX()), POSY_TOINT, POSZ_TOINT);
-				if (!IsBlockRail(Block) && cBlockInfo::IsSolid(Block))
+				if (IsSolidBlockAtOffset(1, 0, 0))
 				{
-					cBoundingBox bbBlock(Vector3d((int)ceil(GetPosX()), POSY_TOINT, POSZ_TOINT), 0.5, 1);
+					cBoundingBox bbBlock(Vector3d(static_cast<int>(ceil(GetPosX())), POSY_TOINT, POSZ_TOINT), 0.5, 1);
 					cBoundingBox bbMinecart(Vector3d(GetPosX(), floor(GetPosY()), GetPosZ()), GetWidth() / 2, GetHeight());
 
 					if (bbBlock.DoesIntersect(bbMinecart))
@@ -778,8 +795,7 @@ bool cMinecart::TestBlockCollision(NIBBLETYPE a_RailMeta)
 			}
 			else if (GetSpeedX() < 0)
 			{
-				BLOCKTYPE Block = m_World->GetBlock(POSX_TOINT - 1, POSY_TOINT, POSZ_TOINT);
-				if (!IsBlockRail(Block) && cBlockInfo::IsSolid(Block))
+				if (IsSolidBlockAtOffset(-1, 0, 0))
 				{
 					cBoundingBox bbBlock(Vector3d(POSX_TOINT - 1, POSY_TOINT, POSZ_TOINT), 0.5, 1);
 					cBoundingBox bbMinecart(Vector3d(GetPosX() - 1, floor(GetPosY()), GetPosZ()), GetWidth() / 2, GetHeight());
@@ -795,31 +811,66 @@ bool cMinecart::TestBlockCollision(NIBBLETYPE a_RailMeta)
 			break;
 		}
 		case E_META_RAIL_CURVED_ZM_XM:
-		case E_META_RAIL_CURVED_ZM_XP:
-		case E_META_RAIL_CURVED_ZP_XM:
-		case E_META_RAIL_CURVED_ZP_XP:
 		{
-			BLOCKTYPE BlockXM = m_World->GetBlock(POSX_TOINT - 1, POSY_TOINT, POSZ_TOINT);
-			BLOCKTYPE BlockXP = m_World->GetBlock(POSX_TOINT + 1, POSY_TOINT, POSZ_TOINT);
-			BLOCKTYPE BlockZM = m_World->GetBlock(POSX_TOINT, POSY_TOINT, POSZ_TOINT - 1);
-			BLOCKTYPE BlockZP = m_World->GetBlock(POSX_TOINT, POSY_TOINT, POSZ_TOINT + 1);
-			if (
-				(!IsBlockRail(BlockXM) && cBlockInfo::IsSolid(BlockXM)) ||
-				(!IsBlockRail(BlockXP) && cBlockInfo::IsSolid(BlockXP)) ||
-				(!IsBlockRail(BlockZM) && cBlockInfo::IsSolid(BlockZM)) ||
-				(!IsBlockRail(BlockZP) && cBlockInfo::IsSolid(BlockZP))
-				)
+			bool IsBlockXM = IsSolidBlockAtOffset(-1, 0, 0);
+			bool IsBlockZM = IsSolidBlockAtOffset(0, 0, -1);
+
+			if (((GetSpeedZ() < 0) && IsBlockZM) || ((GetSpeedX() < 0) && IsBlockXM))
 			{
 				SetSpeed(0, 0, 0);
 				SetPosition(POSX_TOINT + 0.5, GetPosY(), POSZ_TOINT + 0.5);
 				return true;
 			}
+
+			break;
+		}
+		case E_META_RAIL_CURVED_ZM_XP:
+		{
+			bool IsBlockXP = IsSolidBlockAtOffset(1, 0, 0);
+			bool IsBlockZM = IsSolidBlockAtOffset(0, 0, -1);
+
+			if (((GetSpeedZ() < 0) &&  IsBlockZM) || ((GetSpeedX() > 0) && IsBlockXP))
+			{
+				SetSpeed(0, 0, 0);
+				SetPosition(POSX_TOINT + 0.5, GetPosY(), POSZ_TOINT + 0.5);
+				return true;
+			}
+
+			break;
+		}
+		case E_META_RAIL_CURVED_ZP_XM:
+		{
+			bool IsBlockXM = IsSolidBlockAtOffset(-1, 0, 0);
+			bool IsBlockZP = IsSolidBlockAtOffset(0, 0, +1);
+
+			if (((GetSpeedZ() > 0) && IsBlockZP) || ((GetSpeedX() < 0) && IsBlockXM))
+			{
+				SetSpeed(0, 0, 0);
+				SetPosition(POSX_TOINT + 0.5, GetPosY(), POSZ_TOINT + 0.5);
+				return true;
+			}
+
+			break;
+		}
+		case E_META_RAIL_CURVED_ZP_XP:
+		{
+			bool IsBlockXP = IsSolidBlockAtOffset(1, 0, 0);
+			bool IsBlockZP = IsSolidBlockAtOffset(0, 0, 1);
+
+			if (((GetSpeedZ() > 0) && IsBlockZP) || ((GetSpeedX() > 0) && IsBlockXP))
+			{
+				SetSpeed(0, 0, 0);
+				SetPosition(POSX_TOINT + 0.5, GetPosY(), POSZ_TOINT + 0.5);
+				return true;
+			}
+
 			break;
 		}
 		default: break;
 	}
 	return false;
 }
+
 
 
 
@@ -845,24 +896,16 @@ bool cMinecart::TestEntityCollision(NIBBLETYPE a_RailMeta)
 		{
 			if (MinecartCollisionCallback.GetCollidedEntityPosition().z >= GetPosZ())
 			{
-				if ((-GetSpeedZ() * 0.4) < 0.01)
+				if (GetSpeedZ() > 0)  // True if minecart is moving into the direction of the entity
 				{
-					AddSpeedZ(-4);
-				}
-				else
-				{
-					SetSpeedZ(-GetSpeedZ() * 0.4);
+					SetSpeedZ(0);  // Entity handles the pushing
 				}
 			}
-			else
+			else  // if (MinecartCollisionCallback.GetCollidedEntityPosition().z < GetPosZ())
 			{
-				if ((GetSpeedZ() * 0.4) < 0.01)
+				if (GetSpeedZ() < 0)  // True if minecart is moving into the direction of the entity
 				{
-					AddSpeedZ(4);
-				}
-				else
-				{
-					SetSpeedZ(GetSpeedZ() * 0.4);
+					SetSpeedZ(0);  // Entity handles the pushing
 				}
 			}
 			return true;
@@ -871,24 +914,16 @@ bool cMinecart::TestEntityCollision(NIBBLETYPE a_RailMeta)
 		{
 			if (MinecartCollisionCallback.GetCollidedEntityPosition().x >= GetPosX())
 			{
-				if ((-GetSpeedX() * 0.4) < 0.01)
+				if (GetSpeedX() > 0)  // True if minecart is moving into the direction of the entity
 				{
-					AddSpeedX(-4);
-				}
-				else
-				{
-					SetSpeedX(-GetSpeedX() * 0.4);
+					SetSpeedX(0);  // Entity handles the pushing
 				}
 			}
-			else
+			else  // if (MinecartCollisionCallback.GetCollidedEntityPosition().x < GetPosX())
 			{
-				if ((GetSpeedX() * 0.4) < 0.01)
+				if (GetSpeedX() < 0)  // True if minecart is moving into the direction of the entity
 				{
-					AddSpeedX(4);
-				}
-				else
-				{
-					SetSpeedX(GetSpeedX() * 0.4);
+					SetSpeedX(0);  // Entity handles the pushing
 				}
 			}
 			return true;
@@ -1003,7 +1038,7 @@ bool cMinecart::TestEntityCollision(NIBBLETYPE a_RailMeta)
 
 bool cMinecart::DoTakeDamage(TakeDamageInfo & TDI)
 {
-	if ((TDI.Attacker != nullptr) && TDI.Attacker->IsPlayer() && ((cPlayer *)TDI.Attacker)->IsGameModeCreative())
+	if ((TDI.Attacker != nullptr) && TDI.Attacker->IsPlayer() && static_cast<cPlayer *>(TDI.Attacker)->IsGameModeCreative())
 	{
 		Destroy();
 		TDI.FinalDamage = GetMaxHealth();  // Instant hit for creative
@@ -1011,7 +1046,7 @@ bool cMinecart::DoTakeDamage(TakeDamageInfo & TDI)
 		return super::DoTakeDamage(TDI);  // No drops for creative
 	}
 
-	m_LastDamage = TDI.FinalDamage;
+	m_LastDamage = static_cast<int>(TDI.FinalDamage);
 	if (!super::DoTakeDamage(TDI))
 	{
 		return false;
@@ -1022,7 +1057,7 @@ bool cMinecart::DoTakeDamage(TakeDamageInfo & TDI)
 	if (GetHealth() <= 0)
 	{
 		Destroy();
-		
+
 		cItems Drops;
 		switch (m_Payload)
 		{
@@ -1051,16 +1086,65 @@ bool cMinecart::DoTakeDamage(TakeDamageInfo & TDI)
 				Drops.push_back(cItem(E_ITEM_MINECART_WITH_HOPPER, 1, 0));
 				break;
 			}
-			default:
-			{
-				ASSERT(!"Unhandled minecart type when spawning pickup!");
-				return true;
-			}
 		}
-		
+
 		m_World->SpawnItemPickups(Drops, GetPosX(), GetPosY(), GetPosZ());
 	}
 	return true;
+}
+
+
+
+
+
+void cMinecart::ApplyAcceleration(Vector3d a_ForwardDirection, double a_Acceleration)
+{
+	double CurSpeed = GetSpeed().Dot(a_ForwardDirection);
+	double NewSpeed = CurSpeed + a_Acceleration;
+
+	if (NewSpeed < 0.0)
+	{
+		// Prevent deceleration from turning the minecart around.
+		NewSpeed = 0.0;
+	}
+
+	auto Acceleration = a_ForwardDirection * (NewSpeed - CurSpeed);
+
+	AddSpeed(Acceleration);
+}
+
+
+
+
+
+void cMinecart::DoSetSpeed(double a_SpeedX, double a_SpeedY, double a_SpeedZ)
+{
+	if (a_SpeedX > MAX_SPEED)
+	{
+		a_SpeedX = MAX_SPEED;
+	}
+	else if (a_SpeedX < MAX_SPEED_NEGATIVE)
+	{
+		a_SpeedX = MAX_SPEED_NEGATIVE;
+	}
+	if (a_SpeedY > MAX_SPEED)
+	{
+		a_SpeedY = MAX_SPEED;
+	}
+	else if (a_SpeedY < MAX_SPEED_NEGATIVE)
+	{
+		a_SpeedY = MAX_SPEED_NEGATIVE;
+	}
+	if (a_SpeedZ > MAX_SPEED)
+	{
+		a_SpeedZ = MAX_SPEED;
+	}
+	else if (a_SpeedZ < MAX_SPEED_NEGATIVE)
+	{
+		a_SpeedZ = MAX_SPEED_NEGATIVE;
+	}
+
+	super::DoSetSpeed(a_SpeedX, a_SpeedY, a_SpeedZ);
 }
 
 
@@ -1082,8 +1166,8 @@ void cMinecart::Destroyed()
 ////////////////////////////////////////////////////////////////////////////////
 // cRideableMinecart:
 
-cRideableMinecart::cRideableMinecart(double a_X, double a_Y, double a_Z, const cItem & a_Content, int a_Height) :
-	super(mpNone, a_X, a_Y, a_Z),
+cRideableMinecart::cRideableMinecart(Vector3d a_Pos, const cItem & a_Content, int a_Height):
+	super(mpNone, a_Pos),
 	m_Content(a_Content),
 	m_Height(a_Height)
 {
@@ -1105,17 +1189,17 @@ void cRideableMinecart::OnRightClicked(cPlayer & a_Player)
 			a_Player.Detach();
 			return;
 		}
-		
+
 		if (m_Attachee->IsPlayer())
 		{
 			// Another player is already sitting in here, cannot attach
 			return;
 		}
-		
+
 		// Detach whatever is sitting in this minecart now:
 		m_Attachee->Detach();
 	}
-	
+
 	// Attach the player to this minecart
 	a_Player.AttachTo(this);
 }
@@ -1127,8 +1211,8 @@ void cRideableMinecart::OnRightClicked(cPlayer & a_Player)
 ////////////////////////////////////////////////////////////////////////////////
 // cMinecartWithChest:
 
-cMinecartWithChest::cMinecartWithChest(double a_X, double a_Y, double a_Z) :
-	super(mpChest, a_X, a_Y, a_Z),
+cMinecartWithChest::cMinecartWithChest(Vector3d a_Pos):
+	super(mpChest, a_Pos),
 	cEntityWindowOwner(this),
 	m_Contents(ContentsWidth, ContentsHeight)
 {
@@ -1154,7 +1238,7 @@ void cMinecartWithChest::OnRightClicked(cPlayer & a_Player)
 	{
 		if (a_Player.GetWindow() != Window)
 		{
-			a_Player.OpenWindow(Window);
+			a_Player.OpenWindow(*Window);
 		}
 	}
 }
@@ -1174,9 +1258,24 @@ void cMinecartWithChest::OpenNewWindow()
 
 void cMinecartWithChest::Destroyed()
 {
+	if (GetWindow() != nullptr)
+	{
+		GetWindow()->OwnerDestroyed();
+	}
 	cItems Pickups;
 	m_Contents.CopyToItems(Pickups);
-	GetWorld()->SpawnItemPickups(Pickups, GetPosX(), GetPosY() + 1, GetPosZ(), 4);
+
+
+	// Schedule the pickups creation for the next world tick
+	// This avoids a deadlock when terminating the world
+	// Note that the scheduled task may be run when this object is no longer valid, we need to store everything in the task's captured variables
+	auto posX = GetPosX();
+	auto posY = GetPosY() + 1;
+	auto posZ = GetPosZ();
+	GetWorld()->ScheduleTask(1, [Pickups, posX, posY, posZ](cWorld & World)
+	{
+		World.SpawnItemPickups(Pickups, posX, posY, posZ, 4);
+	});
 }
 
 
@@ -1186,8 +1285,8 @@ void cMinecartWithChest::Destroyed()
 ////////////////////////////////////////////////////////////////////////////////
 // cMinecartWithFurnace:
 
-cMinecartWithFurnace::cMinecartWithFurnace(double a_X, double a_Y, double a_Z) :
-	super(mpFurnace, a_X, a_Y, a_Z),
+cMinecartWithFurnace::cMinecartWithFurnace(Vector3d a_Pos):
+	super(mpFurnace, a_Pos),
 	m_FueledTimeLeft(-1),
 	m_IsFueled(false)
 {
@@ -1222,6 +1321,11 @@ void cMinecartWithFurnace::OnRightClicked(cPlayer & a_Player)
 void cMinecartWithFurnace::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 {
 	super::Tick(a_Dt, a_Chunk);
+	if (!IsTicking())
+	{
+		// The base class tick destroyed us
+		return;
+	}
 
 	if (m_IsFueled)
 	{
@@ -1248,8 +1352,8 @@ void cMinecartWithFurnace::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk
 ////////////////////////////////////////////////////////////////////////////////
 // cMinecartWithTNT:
 
-cMinecartWithTNT::cMinecartWithTNT(double a_X, double a_Y, double a_Z) :
-	super(mpTNT, a_X, a_Y, a_Z)
+cMinecartWithTNT::cMinecartWithTNT(Vector3d a_Pos):
+	super(mpTNT, a_Pos)
 {
 }
 
@@ -1262,8 +1366,8 @@ cMinecartWithTNT::cMinecartWithTNT(double a_X, double a_Y, double a_Z) :
 ////////////////////////////////////////////////////////////////////////////////
 // cMinecartWithHopper:
 
-cMinecartWithHopper::cMinecartWithHopper(double a_X, double a_Y, double a_Z) :
-	super(mpHopper, a_X, a_Y, a_Z)
+cMinecartWithHopper::cMinecartWithHopper(Vector3d a_Pos):
+	super(mpHopper, a_Pos)
 {
 }
 

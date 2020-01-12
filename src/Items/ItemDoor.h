@@ -20,10 +20,11 @@ public:
 	}
 
 
-	virtual bool OnPlayerPlace(
+	virtual bool GetBlocksToPlace(
 		cWorld & a_World, cPlayer & a_Player, const cItem & a_EquippedItem,
 		int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
-		int a_CursorX, int a_CursorY, int a_CursorZ
+		int a_CursorX, int a_CursorY, int a_CursorZ,
+		sSetBlockVector & a_BlocksToSet
 	) override
 	{
 		// Vanilla only allows door placement while clicking on the top face of the block below the door:
@@ -31,7 +32,6 @@ public:
 		{
 			return false;
 		}
-		AddFaceDirection(a_BlockX, a_BlockY, a_BlockZ, a_BlockFace);
 
 		// Door (bottom block) can be placed in Y range of [1, 254]:
 		if ((a_BlockY < 1) || (a_BlockY >= cChunkDef::Height - 2))
@@ -49,7 +49,7 @@ public:
 		BLOCKTYPE BlockType;
 		switch (m_ItemType)
 		{
-			case E_ITEM_WOODEN_DOOR:   BlockType = E_BLOCK_WOODEN_DOOR;   break;
+			case E_ITEM_WOODEN_DOOR:   BlockType = E_BLOCK_OAK_DOOR;      break;
 			case E_ITEM_IRON_DOOR:     BlockType = E_BLOCK_IRON_DOOR;     break;
 			case E_ITEM_SPRUCE_DOOR:   BlockType = E_BLOCK_SPRUCE_DOOR;   break;
 			case E_ITEM_BIRCH_DOOR:    BlockType = E_BLOCK_BIRCH_DOOR;    break;
@@ -89,14 +89,15 @@ public:
 		BLOCKTYPE RightNeighborBlock = a_World.GetBlock(RightNeighborPos);
 		/*
 		// DEBUG:
-		LOGD("Door being placed at {%d, %d, %d}", a_BlockX, a_BlockY, a_BlockZ);
-		LOGD("RelDirToOutside: {%d, %d, %d}", RelDirToOutside.x, RelDirToOutside.y, RelDirToOutside.z);
-		LOGD("Left neighbor at {%d, %d, %d}: %d (%s)", LeftNeighborPos.x, LeftNeighborPos.y, LeftNeighborPos.z, LeftNeighborBlock, ItemTypeToString(LeftNeighborBlock).c_str());
-		LOGD("Right neighbor at {%d, %d, %d}: %d (%s)", RightNeighborPos.x, RightNeighborPos.y, RightNeighborPos.z, RightNeighborBlock, ItemTypeToString(RightNeighborBlock).c_str());
+		FLOGD("Door being placed at {0}", Vector3i{a_BlockX, a_BlockY, a_BlockZ});
+		FLOGD("RelDirToOutside: {0}", RelDirToOutside);
+		FLOGD("Left neighbor at {0}: {1} ({2})", LeftNeighborPos, LeftNeighborBlock, ItemTypeToString(LeftNeighborBlock));
+		FLOGD("Right neighbor at {0}: {1} ({2})", RightNeighborPos, RightNeighborBlock, ItemTypeToString(RightNeighborBlock));
 		*/
 		if (
 			cBlockDoorHandler::IsDoorBlockType(LeftNeighborBlock) ||   // The block to the left is a door block
 			(
+				!cBlockInfo::IsSolid(LeftNeighborBlock) &&               // Prioritize hinge on the left side
 				cBlockInfo::IsSolid(RightNeighborBlock) &&               // The block to the right is solid...
 				!cBlockDoorHandler::IsDoorBlockType(RightNeighborBlock)  // ... but not a door
 			)
@@ -107,10 +108,9 @@ public:
 		}
 
 		// Set the blocks:
-		sSetBlockVector blks;
-		blks.emplace_back(a_BlockX, a_BlockY, a_BlockZ, BlockType, LowerBlockMeta);
-		blks.emplace_back(a_BlockX, a_BlockY + 1, a_BlockZ, BlockType, UpperBlockMeta);
-		return a_Player.PlaceBlocks(blks);
+		a_BlocksToSet.emplace_back(a_BlockX, a_BlockY, a_BlockZ, BlockType, LowerBlockMeta);
+		a_BlocksToSet.emplace_back(a_BlockX, a_BlockY + 1, a_BlockZ, BlockType, UpperBlockMeta);
+		return true;
 	}
 
 

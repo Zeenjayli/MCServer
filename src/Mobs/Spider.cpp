@@ -3,12 +3,13 @@
 
 #include "Spider.h"
 
-
-
+#include "../World.h"
+#include "../Entities/Player.h"
+#include "../Chunk.h"
 
 
 cSpider::cSpider(void) :
-	super("Spider", mtSpider, "mob.spider.say", "mob.spider.death", 1.4, 0.9)
+	super("Spider", mtSpider, "entity.spider.hurt", "entity.spider.death", 1.4, 0.9)
 {
 }
 
@@ -18,7 +19,7 @@ cSpider::cSpider(void) :
 
 void cSpider::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 {
-	int LootingLevel = 0;
+	unsigned int LootingLevel = 0;
 	if (a_Killer != nullptr)
 	{
 		LootingLevel = a_Killer->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchLooting);
@@ -33,3 +34,50 @@ void cSpider::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 
 
 
+
+void cSpider::EventSeePlayer(cPlayer * a_Player, cChunk & a_Chunk)
+{
+	if (!GetWorld()->IsChunkLighted(GetChunkX(), GetChunkZ()))
+	{
+		return;
+	}
+
+	PREPARE_REL_AND_CHUNK(GetPosition(), a_Chunk);
+	if (!RelSuccess)
+	{
+		return;
+	}
+
+	if (
+		a_Player->CanMobsTarget() &&
+		!((Chunk->GetSkyLightAltered(Rel.x, Rel.y, Rel.z) > 11) || (Chunk->GetBlockLight(Rel.x, Rel.y, Rel.z) > 11))
+	)
+	{
+		super::EventSeePlayer(a_Player, a_Chunk);
+	}
+}
+
+
+
+
+
+bool cSpider::DoTakeDamage(TakeDamageInfo & a_TDI)
+{
+	if (!super::DoTakeDamage(a_TDI))
+	{
+		return false;
+	}
+
+	// If the source of the damage is not from an pawn entity, switch to idle
+	if ((a_TDI.Attacker == nullptr) || !a_TDI.Attacker->IsPawn())
+	{
+		m_EMState = IDLE;
+	}
+	else
+	{
+		// If the source of the damage is from a pawn entity, chase that entity
+		m_EMState = CHASING;
+	}
+
+	return true;
+}

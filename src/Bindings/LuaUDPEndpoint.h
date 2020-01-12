@@ -10,7 +10,7 @@
 #pragma once
 
 #include "../OSSupport/Network.h"
-#include "PluginLua.h"
+#include "LuaState.h"
 
 
 
@@ -18,7 +18,7 @@
 
 // fwd:
 class cLuaUDPEndpoint;
-typedef SharedPtr<cLuaUDPEndpoint> cLuaUDPEndpointPtr;
+typedef std::shared_ptr<cLuaUDPEndpoint> cLuaUDPEndpointPtr;
 
 
 
@@ -28,10 +28,10 @@ class cLuaUDPEndpoint:
 	public cUDPEndpoint::cCallbacks
 {
 public:
-	/** Creates a new instance of the endpoint, attached to the specified plugin and wrapping the callbacks that are in a table at the specified stack pos. */
-	cLuaUDPEndpoint(cPluginLua & a_Plugin, int a_CallbacksTableStackPos);
+	/** Creates a new instance of the endpoint, wrapping the callbacks that are in the specified table. */
+	cLuaUDPEndpoint(cLuaState::cTableRefPtr && a_Callbacks);
 
-	~cLuaUDPEndpoint();
+	virtual ~cLuaUDPEndpoint() override;
 
 	/** Opens the endpoint so that it starts listening for incoming data on the specified port.
 	a_Self is the shared pointer to self that the object keeps to keep itself alive for as long as it needs (for Lua). */
@@ -58,11 +58,8 @@ public:
 	void Release(void);
 
 protected:
-	/** The plugin for which the link is created. */
-	cPluginLua & m_Plugin;
-
 	/** The Lua table that holds the callbacks to be invoked. */
-	cLuaState::cRef m_Callbacks;
+	cLuaState::cTableRefPtr m_Callbacks;
 
 	/** SharedPtr to self, so that the object can keep itself alive for as long as it needs (for Lua). */
 	cLuaUDPEndpointPtr m_Self;

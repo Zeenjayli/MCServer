@@ -3,7 +3,6 @@
 
 #include "Globals.h"
 #include "StructGen.h"
-#include "../BlockID.h"
 #include "Trees.h"
 #include "../BlockArea.h"
 #include "../LinearUpscale.h"
@@ -19,9 +18,9 @@ void cStructGenTrees::GenFinish(cChunkDesc & a_ChunkDesc)
 {
 	int ChunkX = a_ChunkDesc.GetChunkX();
 	int ChunkZ = a_ChunkDesc.GetChunkZ();
-	
-	cChunkDesc WorkerDesc(ChunkX, ChunkZ);
-	
+
+	cChunkDesc WorkerDesc({ChunkX, ChunkZ});
+
 	// Generate trees:
 	for (int x = 0; x <= 2; x++)
 	{
@@ -29,19 +28,19 @@ void cStructGenTrees::GenFinish(cChunkDesc & a_ChunkDesc)
 		for (int z = 0; z <= 2; z++)
 		{
 			int BaseZ = ChunkZ + z - 1;
-			
+
 			cChunkDesc * Dest;
 
 			if ((x != 1) || (z != 1))
 			{
 				Dest = &WorkerDesc;
-				WorkerDesc.SetChunkCoords(BaseX, BaseZ);
-				
+				WorkerDesc.SetChunkCoords({BaseX, BaseZ});
+
 				// TODO: This may cause a lot of wasted calculations, instead of pulling data out of a single (cChunkDesc) cache
 
 				cChunkDesc::Shape workerShape;
-				m_BiomeGen->GenBiomes           (BaseX, BaseZ, WorkerDesc.GetBiomeMap());
-				m_ShapeGen->GenShape            (BaseX, BaseZ, workerShape);
+				m_BiomeGen->GenBiomes           ({BaseX, BaseZ}, WorkerDesc.GetBiomeMap());
+				m_ShapeGen->GenShape            ({BaseX, BaseZ}, workerShape);
 				WorkerDesc.SetHeightFromShape   (workerShape);
 				m_CompositionGen->ComposeTerrain(WorkerDesc, workerShape);
 			}
@@ -66,22 +65,8 @@ void cStructGenTrees::GenFinish(cChunkDesc & a_ChunkDesc)
 			ApplyTreeImage(ChunkX, ChunkZ, a_ChunkDesc, OutsideLogs, IgnoredOverflow);
 		}  // for z
 	}  // for x
-	
-	// Update the heightmap:
-	for (int x = 0; x < cChunkDef::Width; x++)
-	{
-		for (int z = 0; z < cChunkDef::Width; z++)
-		{
-			for (int y = cChunkDef::Height - 1; y >= 0; y--)
-			{
-				if (a_ChunkDesc.GetBlockType(x, y, z) != E_BLOCK_AIR)
-				{
-					a_ChunkDesc.SetHeight(x, z, y);
-					break;
-				}
-			}  // for y
-		}  // for z
-	}  // for x
+
+	a_ChunkDesc.UpdateHeightmap();
 }
 
 
@@ -97,9 +82,9 @@ void cStructGenTrees::GenerateSingleTree(
 {
 	int x = (m_Noise.IntNoise3DInt(a_ChunkX + a_ChunkZ, a_ChunkZ, a_Seq) / 19) % cChunkDef::Width;
 	int z = (m_Noise.IntNoise3DInt(a_ChunkX - a_ChunkZ, a_Seq, a_ChunkZ) / 19) % cChunkDef::Width;
-	
+
 	int Height = a_ChunkDesc.GetHeight(x, z);
-	
+
 	if ((Height <= 0) || (Height >= 230))
 	{
 		return;
@@ -111,10 +96,10 @@ void cStructGenTrees::GenerateSingleTree(
 	{
 		return;
 	}
-	
+
 	sSetBlockVector TreeLogs, TreeOther;
 	GetTreeImageByBiome(
-		a_ChunkX * cChunkDef::Width + x, Height + 1, a_ChunkZ * cChunkDef::Width + z,
+		{ a_ChunkX * cChunkDef::Width + x, Height + 1, a_ChunkZ * cChunkDef::Width + z },
 		m_Noise, a_Seq,
 		a_ChunkDesc.GetBiome(x, z),
 		TreeLogs, TreeOther
@@ -148,7 +133,7 @@ void cStructGenTrees::GenerateSingleTree(
 			}
 		}
 	}
-	
+
 	ApplyTreeImage(a_ChunkX, a_ChunkZ, a_ChunkDesc, TreeOther, a_OutsideOther);
 	ApplyTreeImage(a_ChunkX, a_ChunkZ, a_ChunkDesc, TreeLogs,  a_OutsideLogs);
 }
@@ -172,9 +157,10 @@ void cStructGenTrees::ApplyTreeImage(
 			// Inside this chunk, integrate into a_ChunkDesc:
 			switch (a_ChunkDesc.GetBlockType(itr->m_RelX, itr->m_RelY, itr->m_RelZ))
 			{
+				case E_BLOCK_NEW_LEAVES:
 				case E_BLOCK_LEAVES:
 				{
-					if (itr->m_BlockType != E_BLOCK_LOG)
+					if ((itr->m_BlockType != E_BLOCK_LOG) && (itr->m_BlockType != E_BLOCK_NEW_LOG))
 					{
 						break;
 					}
@@ -183,13 +169,21 @@ void cStructGenTrees::ApplyTreeImage(
 				CASE_TREE_OVERWRITTEN_BLOCKS:
 				{
 					a_ChunkDesc.SetBlockTypeMeta(itr->m_RelX, itr->m_RelY, itr->m_RelZ, itr->m_BlockType, itr->m_BlockMeta);
+					// If grass is below our tree, turn it to dirt
+					if (
+						(cBlockInfo::IsSolid(itr->m_BlockType)) &&
+						(a_ChunkDesc.GetBlockType(itr->m_RelX, itr->m_RelY - 1, itr->m_RelZ) == E_BLOCK_GRASS)
+					)
+					{
+						a_ChunkDesc.SetBlockType(itr->m_RelX, itr->m_RelY - 1, itr->m_RelZ, E_BLOCK_DIRT);
+					}
 					break;
 				}
-				
+
 			}  // switch (GetBlock())
 			continue;
 		}
-		
+
 		// Outside the chunk, push into a_Overflow.
 		// Don't check if already present there, by separating logs and others we don't need the checks anymore:
 		a_Overflow.push_back(*itr);
@@ -205,178 +199,92 @@ int cStructGenTrees::GetNumTrees(
 	const cChunkDef::BiomeMap & a_Biomes
 )
 {
-	int NumTrees = 0;
-	for (int x = 0; x < cChunkDef::Width; x++) for (int z = 0; z < cChunkDef::Width; z++)
+	auto BiomeTrees = [](EMCSBiome a_Biome)
 	{
-		int Add = 0;
-		switch (cChunkDef::GetBiome(a_Biomes, x, z))
+		switch (a_Biome)
 		{
-			case biOcean:                Add =   2; break;
-			case biDesert:               Add =   0; break;
-			case biPlains:               Add =   1; break;
-			case biExtremeHills:         Add =   3; break;
-			case biForest:               Add =  30; break;
-			case biTaiga:                Add =  30; break;
-			case biSwampland:            Add =   8; break;
-			case biIcePlains:            Add =   1; break;
-			case biIceMountains:         Add =   1; break;
-			case biMushroomIsland:       Add =   3; break;
-			case biMushroomShore:        Add =   3; break;
-			case biForestHills:          Add =  20; break;
-			case biTaigaHills:           Add =  20; break;
-			case biExtremeHillsEdge:     Add =   5; break;
-			case biJungle:               Add = 120; break;
-			case biJungleHills:          Add =  90; break;
-			case biJungleEdge:           Add =  90; break;
-			case biBirchForest:          Add =  30; break;
-			case biBirchForestHills:     Add =  20; break;
-			case biRoofedForest:         Add =  50; break;
-			case biColdTaiga:            Add =  20; break;
-			case biColdTaigaHills:       Add =  15; break;
-			case biMegaTaiga:            Add =  30; break;
-			case biMegaTaigaHills:       Add =  25; break;
-			case biExtremeHillsPlus:     Add =   3; break;
-			case biSavanna:              Add =   8; break;
-			case biSavannaPlateau:       Add =  12; break;
-			case biMesa:                 Add =   2; break;
-			case biMesaPlateauF:         Add =   8; break;
-			case biMesaPlateau:          Add =   8; break;
-			case biSunflowerPlains:      Add =   1; break;
-			case biDesertM:              Add =   0; break;
-			case biExtremeHillsM:        Add =   4; break;
-			case biFlowerForest:         Add =  30; break;
-			case biTaigaM:               Add =  30; break;
-			case biSwamplandM:           Add =   8; break;
-			case biIcePlainsSpikes:      Add =   1; break;
-			case biJungleM:              Add = 120; break;
-			case biJungleEdgeM:          Add =  90; break;
-			case biBirchForestM:         Add =  30; break;
-			case biBirchForestHillsM:    Add =  20; break;
-			case biRoofedForestM:        Add =  40; break;
-			case biColdTaigaM:           Add =  30; break;
-			case biMegaSpruceTaiga:      Add =  30; break;
-			case biMegaSpruceTaigaHills: Add =  30; break;
-			case biExtremeHillsPlusM:    Add =   4; break;
-			case biSavannaM:             Add =   8; break;
-			case biSavannaPlateauM:      Add =  12; break;
-			case biMesaBryce:            Add =   4; break;
-			case biMesaPlateauFM:        Add =  12; break;
-			case biMesaPlateauM:         Add =  12; break;
+			case biOcean:                return 2;
+			case biPlains:               return 1;
+			case biDesert:               return 0;
+			case biExtremeHills:         return 3;
+			case biForest:               return 30;
+			case biTaiga:                return 30;
+			case biSwampland:            return 8;
+			case biRiver:                return 0;
+			case biNether:               return 0;
+			case biEnd:                  return 0;
+			case biFrozenOcean:          return 0;
+			case biFrozenRiver:          return 0;
+			case biIcePlains:            return 1;
+			case biIceMountains:         return 1;
+			case biMushroomIsland:       return 3;
+			case biMushroomShore:        return 3;
+			case biBeach:                return 0;
+			case biDesertHills:          return 0;
+			case biForestHills:          return 20;
+			case biTaigaHills:           return 20;
+			case biExtremeHillsEdge:     return 5;
+			case biJungle:               return 120;
+			case biJungleHills:          return 90;
+			case biJungleEdge:           return 90;
+			case biDeepOcean:            return 0;
+			case biStoneBeach:           return 0;
+			case biColdBeach:            return 0;
+			case biBirchForest:          return 30;
+			case biBirchForestHills:     return 20;
+			case biRoofedForest:         return 50;
+			case biColdTaiga:            return 20;
+			case biColdTaigaHills:       return 15;
+			case biMegaTaiga:            return 30;
+			case biMegaTaigaHills:       return 25;
+			case biExtremeHillsPlus:     return 3;
+			case biSavanna:              return 8;
+			case biSavannaPlateau:       return 12;
+			case biMesa:                 return 2;
+			case biMesaPlateauF:         return 8;
+			case biMesaPlateau:          return 8;
+			// Biome variants
+			case biSunflowerPlains:      return 1;
+			case biDesertM:              return 0;
+			case biExtremeHillsM:        return 4;
+			case biFlowerForest:         return 30;
+			case biTaigaM:               return 30;
+			case biSwamplandM:           return 8;
+			case biIcePlainsSpikes:      return 1;
+			case biJungleM:              return 120;
+			case biJungleEdgeM:          return 90;
+			case biBirchForestM:         return 30;
+			case biBirchForestHillsM:    return 20;
+			case biRoofedForestM:        return 40;
+			case biColdTaigaM:           return 30;
+			case biMegaSpruceTaiga:      return 30;
+			case biMegaSpruceTaigaHills: return 30;
+			case biExtremeHillsPlusM:    return 4;
+			case biSavannaM:             return 8;
+			case biSavannaPlateauM:      return 12;
+			case biMesaBryce:            return 4;
+			case biMesaPlateauFM:        return 12;
+			case biMesaPlateauM:         return 12;
+			// Non-biomes
+			case biInvalidBiome:
+			case biNumBiomes:
+			case biVariant:
+			case biNumVariantBiomes:
+			{
+				ASSERT(!"Invalid biome in cStructGenTrees::GetNumTrees");
+				return 0;
+			}
 		}
-		NumTrees += Add;
+		UNREACHABLE("Unsupported biome");
+	};
+
+	int NumTrees = 0;
+	for (auto Biome : a_Biomes)
+	{
+		NumTrees += BiomeTrees(Biome);
 	}
 	return NumTrees / 1024;
 }
-
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////
-// cStructGenOreNests:
-
-void cStructGenOreNests::GenFinish(cChunkDesc & a_ChunkDesc)
-{
-	int ChunkX = a_ChunkDesc.GetChunkX();
-	int ChunkZ = a_ChunkDesc.GetChunkZ();
-	cChunkDef::BlockTypes & BlockTypes = a_ChunkDesc.GetBlockTypes();
-	cChunkDesc::BlockNibbleBytes & BlockMetas = a_ChunkDesc.GetBlockMetasUncompressed();
-
-	int seq = 1;
-	
-	// Generate the ores from the ore list.
-	for (OreList::const_iterator itr = m_OreList.begin(); itr != m_OreList.end(); ++itr)
-	{
-		GenerateOre(ChunkX, ChunkZ, itr->BlockType, itr->BlockMeta, itr->MaxHeight, itr->NumNests, itr->NestSize, BlockTypes, BlockMetas, seq);
-		seq++;
-	}
-}
-
-
-
-
-
-void cStructGenOreNests::GenerateOre(int a_ChunkX, int a_ChunkZ, BLOCKTYPE a_OreType, NIBBLETYPE a_BlockMeta, int a_MaxHeight, int a_NumNests, int a_NestSize, cChunkDef::BlockTypes & a_BlockTypes, cChunkDesc::BlockNibbleBytes & a_BlockMetas, int a_Seq)
-{
-	// This function generates several "nests" of ore, each nest consisting of number of ore blocks relatively adjacent to each other.
-	// It does so by making a random XYZ walk and adding ore along the way in cuboids of different (random) sizes
-	// Only stone gets replaced with ore, all other blocks stay (so the nest can actually be smaller than specified).
-	
-	for (int i = 0; i < a_NumNests; i++)
-	{
-		int rnd = m_Noise.IntNoise3DInt(a_ChunkX + i, a_Seq, a_ChunkZ + 64 * i) / 8;
-		int BaseX = rnd % cChunkDef::Width;
-		rnd /= cChunkDef::Width;
-		int BaseZ = rnd % cChunkDef::Width;
-		rnd /= cChunkDef::Width;
-		int BaseY = rnd % a_MaxHeight;
-		rnd /= a_MaxHeight;
-		int NestSize = a_NestSize + (rnd % (a_NestSize / 4));  // The actual nest size may be up to 1 / 4 larger
-		int Num = 0;
-		while (Num < NestSize)
-		{
-			// Put a cuboid around [BaseX, BaseY, BaseZ]
-			int rnd = m_Noise.IntNoise3DInt(a_ChunkX + 64 * i, 2 * a_Seq + Num, a_ChunkZ + 32 * i) / 8;
-			int xsize = rnd % 2;
-			int ysize = (rnd / 4) % 2;
-			int zsize = (rnd / 16) % 2;
-			rnd >>= 8;
-			for (int x = xsize; x >= 0; --x)
-			{
-				int BlockX = BaseX + x;
-				if ((BlockX < 0) || (BlockX >= cChunkDef::Width))
-				{
-					Num++;  // So that the cycle finishes even if the base coords wander away from the chunk
-					continue;
-				}
-				for (int y = ysize; y >= 0; --y)
-				{
-					int BlockY = BaseY + y;
-					if ((BlockY < 0) || (BlockY >= cChunkDef::Height))
-					{
-						Num++;  // So that the cycle finishes even if the base coords wander away from the chunk
-						continue;
-					}
-					for (int z = zsize; z >= 0; --z)
-					{
-						int BlockZ = BaseZ + z;
-						if ((BlockZ < 0) || (BlockZ >= cChunkDef::Width))
-						{
-							Num++;  // So that the cycle finishes even if the base coords wander away from the chunk
-							continue;
-						}
-
-						int Index = cChunkDef::MakeIndexNoCheck(BlockX, BlockY, BlockZ);
-						if (a_BlockTypes[Index] == m_ToReplace)
-						{
-							a_BlockTypes[Index] = a_OreType;
-							a_BlockMetas[Index] = a_BlockMeta;
-						}
-						Num++;
-					}  // for z
-				}  // for y
-			}  // for x
-			
-			// Move the base to a neighbor voxel
-			switch (rnd % 4)
-			{
-				case 0: BaseX--; break;
-				case 1: BaseX++; break;
-			}
-			switch ((rnd >> 3) % 4)
-			{
-				case 0: BaseY--; break;
-				case 1: BaseY++; break;
-			}
-			switch ((rnd >> 6) % 4)
-			{
-				case 0: BaseZ--; break;
-				case 1: BaseZ++; break;
-			}
-		}  // while (Num < NumBlocks)
-	}  // for i - NumNests
-}
-
 
 
 
@@ -389,20 +297,20 @@ void cStructGenLakes::GenFinish(cChunkDesc & a_ChunkDesc)
 {
 	int ChunkX = a_ChunkDesc.GetChunkX();
 	int ChunkZ = a_ChunkDesc.GetChunkZ();
-	
+
 	for (int z = -1; z < 2; z++) for (int x = -1; x < 2; x++)
 	{
 		if (((m_Noise.IntNoise2DInt(ChunkX + x, ChunkZ + z) / 17) % 100) > m_Probability)
 		{
 			continue;
 		}
-		
+
 		cBlockArea Lake;
 		CreateLakeImage(ChunkX + x, ChunkZ + z, a_ChunkDesc.GetMinHeight(), Lake);
-		
+
 		int OfsX = Lake.GetOriginX() + x * cChunkDef::Width;
 		int OfsZ = Lake.GetOriginZ() + z * cChunkDef::Width;
-		
+
 		// Merge the lake into the current data
 		a_ChunkDesc.WriteBlockArea(Lake, OfsX, Lake.GetOriginY(), OfsZ, cBlockArea::msLake);
 	}  // for x, z - neighbor chunks
@@ -416,7 +324,7 @@ void cStructGenLakes::CreateLakeImage(int a_ChunkX, int a_ChunkZ, int a_MaxLakeH
 {
 	a_Lake.Create(16, 8, 16);
 	a_Lake.Fill(cBlockArea::baTypes, E_BLOCK_SPONGE);  // Sponge is the NOP blocktype for lake merging strategy
-	
+
 	// Make a random position in the chunk by using a random 16 block XZ offset and random height up to chunk's max height minus 6
 	int MinHeight = std::max(a_MaxLakeHeight - 6, 2);
 	int Rnd = m_Noise.IntNoise3DInt(a_ChunkX, 128, a_ChunkZ) / 11;
@@ -428,22 +336,22 @@ void cStructGenLakes::CreateLakeImage(int a_ChunkX, int a_ChunkZ, int a_MaxLakeH
 	Rnd = m_Noise.IntNoise3DInt(a_ChunkX, 512, a_ChunkZ) / 13;
 	// Random height [1 .. MinHeight] with preference to center heights
 	int HeightY = 1 + (((Rnd & 0x1ff) % MinHeight) + (((Rnd >> 9) & 0x1ff) % MinHeight)) / 2;
-	
+
 	a_Lake.SetOrigin(OffsetX, HeightY, OffsetZ);
-	
+
 	// Hollow out a few bubbles inside the blockarea:
 	int NumBubbles = 4 + ((Rnd >> 18) & 0x03);  // 4 .. 7 bubbles
 	BLOCKTYPE * BlockTypes = a_Lake.GetBlockTypes();
 	for (int i = 0; i < NumBubbles; i++)
 	{
-		int Rnd = m_Noise.IntNoise3DInt(a_ChunkX, i, a_ChunkZ) / 13;
-		const int BubbleR = 2 + (Rnd & 0x03);  // 2 .. 5
+		int BubbleRnd = m_Noise.IntNoise3DInt(a_ChunkX, i, a_ChunkZ) / 13;
+		const int BubbleR = 2 + (BubbleRnd & 0x03);  // 2 .. 5
 		const int Range = 16 - 2 * BubbleR;
-		const int BubbleX = BubbleR + (Rnd % Range);
-		Rnd >>= 4;
-		const int BubbleY = 4 + (Rnd & 0x01);  // 4 .. 5
-		Rnd >>= 1;
-		const int BubbleZ = BubbleR + (Rnd % Range);
+		const int BubbleX = BubbleR + (BubbleRnd % Range);
+		BubbleRnd >>= 4;
+		const int BubbleY = 4 + (BubbleRnd & 0x01);  // 4 .. 5
+		BubbleRnd >>= 1;
+		const int BubbleZ = BubbleR + (BubbleRnd % Range);
 		const int HalfR = BubbleR / 2;  // 1 .. 2
 		const int RSquared = BubbleR * BubbleR;
 		for (int y = -HalfR; y <= HalfR; y++)
@@ -481,9 +389,9 @@ void cStructGenLakes::CreateLakeImage(int a_ChunkX, int a_ChunkZ, int a_MaxLakeH
 			}
 		}  // for z, x
 	}  // for y
-	
+
 	// TODO: Turn sponge next to lava into stone
-	
+
 	// a_Lake.SaveToSchematicFile(Printf("Lake_%d_%d.schematic", a_ChunkX, a_ChunkZ));
 }
 
@@ -511,7 +419,7 @@ void cStructGenDirectOverhangs::GenFinish(cChunkDesc & a_ChunkDesc)
 	{
 		return;
 	}
-	
+
 	HEIGHTTYPE MaxHeight = a_ChunkDesc.GetMaxHeight();
 
 	const int SEGMENT_HEIGHT = 8;
@@ -520,7 +428,7 @@ void cStructGenDirectOverhangs::GenFinish(cChunkDesc & a_ChunkDesc)
 	// Interpolate the chunk in 16 * SEGMENT_HEIGHT * 16 "segments", each SEGMENT_HEIGHT blocks high and each linearly interpolated separately.
 	// Have two buffers, one for the lowest floor and one for the highest floor, so that Y-interpolation can be done between them
 	// Then swap the buffers and use the previously-top one as the current-bottom, without recalculating it.
-	
+
 	int FloorBuf1[17 * 17];
 	int FloorBuf2[17 * 17];
 	int * FloorHi = FloorBuf1;
@@ -528,7 +436,7 @@ void cStructGenDirectOverhangs::GenFinish(cChunkDesc & a_ChunkDesc)
 	int BaseX = a_ChunkDesc.GetChunkX() * cChunkDef::Width;
 	int BaseZ = a_ChunkDesc.GetChunkZ() * cChunkDef::Width;
 	int BaseY = 63;
-	
+
 	// Interpolate the lowest floor:
 	for (int z = 0; z <= 16 / INTERPOL_Z; z++) for (int x = 0; x <= 16 / INTERPOL_X; x++)
 	{
@@ -538,7 +446,7 @@ void cStructGenDirectOverhangs::GenFinish(cChunkDesc & a_ChunkDesc)
 			256;
 	}  // for x, z - FloorLo[]
 	LinearUpscale2DArrayInPlace<17, 17, INTERPOL_X, INTERPOL_Z>(FloorLo);
-	
+
 	// Interpolate segments:
 	for (int Segment = BaseY; Segment < MaxHeight; Segment += SEGMENT_HEIGHT)
 	{
@@ -551,12 +459,12 @@ void cStructGenDirectOverhangs::GenFinish(cChunkDesc & a_ChunkDesc)
 			);
 		}  // for x, z - FloorLo[]
 		LinearUpscale2DArrayInPlace<17, 17, INTERPOL_X, INTERPOL_Z>(FloorHi);
-		
+
 		// Interpolate between FloorLo and FloorHi:
 		for (int z = 0; z < 16; z++) for (int x = 0; x < 16; x++)
 		{
 			EMCSBiome biome = a_ChunkDesc.GetBiome(x, z);
-			
+
 			if ((biome == biExtremeHills) || (biome == biExtremeHillsEdge))
 			{
 				int Lo = FloorLo[x + 17 * z] / 256;
@@ -572,7 +480,7 @@ void cStructGenDirectOverhangs::GenFinish(cChunkDesc & a_ChunkDesc)
 				break;
 			}  // if (biome)
 		}  // for z, x
-		
+
 		// Swap the floors:
 		std::swap(FloorLo, FloorHi);
 	}
@@ -624,23 +532,23 @@ cStructGenDistortedMembraneOverhangs::cStructGenDistortedMembraneOverhangs(int a
 
 void cStructGenDistortedMembraneOverhangs::GenFinish(cChunkDesc & a_ChunkDesc)
 {
-	const NOISE_DATATYPE Frequency = (NOISE_DATATYPE)16;
-	const NOISE_DATATYPE Amount = (NOISE_DATATYPE)1;
+	const NOISE_DATATYPE Frequency = static_cast<NOISE_DATATYPE>(16);
+	const NOISE_DATATYPE Amount = static_cast<NOISE_DATATYPE>(1);
 	for (int y = 50; y < 128; y++)
 	{
-		NOISE_DATATYPE NoiseY = (NOISE_DATATYPE)y / 32;
+		NOISE_DATATYPE NoiseY = static_cast<NOISE_DATATYPE>(y) / 32;
 		// TODO: proper water level - where to get?
 		BLOCKTYPE ReplacementBlock = (y > 62) ? E_BLOCK_AIR : E_BLOCK_STATIONARY_WATER;
 		for (int z = 0; z < cChunkDef::Width; z++)
 		{
-			NOISE_DATATYPE NoiseZ = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + z)) / Frequency;
+			NOISE_DATATYPE NoiseZ = static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + z) / Frequency;
 			for (int x = 0; x < cChunkDef::Width; x++)
 			{
-				NOISE_DATATYPE NoiseX = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkX() * cChunkDef::Width + x)) / Frequency;
+				NOISE_DATATYPE NoiseX = static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkX() * cChunkDef::Width + x) / Frequency;
 				NOISE_DATATYPE DistortX = m_NoiseX.CubicNoise3D(NoiseX, NoiseY, NoiseZ) * Amount;
 				NOISE_DATATYPE DistortY = m_NoiseY.CubicNoise3D(NoiseX, NoiseY, NoiseZ) * Amount;
 				NOISE_DATATYPE DistortZ = m_NoiseZ.CubicNoise3D(NoiseX, NoiseY, NoiseZ) * Amount;
-				int MembraneHeight = 96 - (int)((DistortY + m_NoiseH.CubicNoise2D(NoiseX + DistortX, NoiseZ + DistortZ)) * 30);
+				int MembraneHeight = 96 - static_cast<int>((DistortY + m_NoiseH.CubicNoise2D(NoiseX + DistortX, NoiseZ + DistortZ)) * 30);
 				if (MembraneHeight < y)
 				{
 					a_ChunkDesc.SetBlockType(x, y, z, ReplacementBlock);
